@@ -1,0 +1,6 @@
+@Veil.Api_HostAddress = http://localhost:5150
+
+GET {{Veil.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

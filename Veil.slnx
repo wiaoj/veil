@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Veil.Analytics/Veil.Analytics.csproj" />
+    <Project Path="src/Veil.Auth/Veil.Auth.csproj" />
+    <Project Path="src/Veil.Certificates/Veil.Certificates.csproj" />
+    <Project Path="src/Veil.EdgeNodes/Veil.EdgeNodes.csproj" />
+    <Project Path="src/Veil.Shared/Veil.Shared.csproj" />
+    <Project Path="src/Veil.Zones/Veil.Zones.csproj" />
+  </Folder>
+  <Folder Name="/src/Apps/">
+    <Project Path="src/Apps/Veil.Analytics.Worker/Veil.Analytics.Worker.csproj" />
+    <Project Path="src/Apps/Veil.Api/Veil.Api.csproj" />
+    <Project Path="src/Apps/Veil.ConfigSync/Veil.ConfigSync.csproj" />
+  </Folder>
+</Solution>
