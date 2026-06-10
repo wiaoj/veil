@@ -6,4 +6,14 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+	<ItemGroup>
+		<PackageReference Include="Wiaoj.Ddd.Abstractions" Version="0.0.1-alpha.73" />
+		<PackageReference Include="Wiaoj.Primitives" Version="0.0.1-alpha.73" />
+		<PackageReference Include="Wiaoj.Results" Version="0.0.1-alpha.73" />
+		<PackageReference Include="Wiaoj.Results.AspNetCore" Version="0.0.1-alpha.73" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\..\..\libraries\src\Modulith\Wiaoj.Modulith\Wiaoj.Modulith.csproj" />
+	</ItemGroup>
 </Project>

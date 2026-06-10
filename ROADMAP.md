@@ -5,7 +5,7 @@
 ## Phase 1 — Foundation
 
 ### 1.1 Repository & Tooling
-- [ ] Solution structure: `Veil.sln`, module projects, `Apps/` projects
+- [x] Solution structure: `Veil.sln`, module projects, `Apps/` projects
 - [ ] `docker-compose.yml` — PostgreSQL, Redis (3 instances: rate-limit, tokens, config), ClickHouse
 - [ ] `.env.example` with all required variables
 - [ ] CI pipeline (GitHub Actions) — build, test, lint on PR
@@ -13,15 +13,15 @@
 ### 1.2 Veil.Shared
 - [ ] `PagedList<T>` 
 - [ ] `ICurrentUser`
-- [ ] Snowflake ID generator
-- [ ] Prefixed + obfuscated ID helpers (prefix registry, Hashids encoding/decoding)
-- [ ] `Wiaoj.Results` — `Result<T>` type, error types, Minimal API extension (`ToHttpResult()`)
+- [x] Snowflake ID generator via Wiaoj.Primitives.Snowflake
+- [x] Prefixed + obfuscated ID helpers (prefix registry, Hashids encoding/decoding)
+- [x] `Wiaoj.Results` — `Result<T>` type, error types, Minimal API extension (`ToHttpResult()`)
 - [ ] RFC 9457 `ProblemDetails` error response shaping
 
 ### 1.3 Veil.Zones — Domain & Persistence
-- [ ] `Zone` aggregate, `ZoneId` (prefixed Snowflake), `ZoneStatus`
-- [ ] `Rule` entity, `RuleId`, `RuleCondition` (all condition types), `RuleAction`
-- [ ] `UpstreamConfig`, `ChallengeConfig` value objects
+- [x] `Zone` aggregate, `ZoneId` (prefixed Snowflake), `ZoneStatus`
+- [x] `Rule` entity, `RuleId`, `RuleCondition` (all condition types), `RuleAction`
+- [x] `UpstreamConfig`, `ChallengeConfig` value objects
 - [ ] `ZoneConfigChangedEvent` domain event
 - [ ] `ZonesDbContext` with own schema (`zones`)
 - [ ] EF Core configuration + initial migration
@@ -77,17 +77,17 @@
 ## Phase 2 — Edge Node (Rust)
 
 ### 2.1 Project skeleton
-- [ ] `Cargo.toml` — Tokio, Hyper, Rustls
-- [ ] Env var loading, runtime setup
-- [ ] Structured logging (`tracing` + JSON)
+- [x] `Cargo.toml` — Tokio, Hyper, Rustls
+- [x] Env var loading, runtime setup
+- [x] Structured logging (`tracing` + JSON)
 
 ### 2.2 Core proxy
-- [ ] TCP listener `:80` / `:443`
-- [ ] TLS termination (Rustls, cert from memory)
-- [ ] HTTP/1.1 + HTTP/2 (Hyper)
-- [ ] `RequestContext` type
-- [ ] Upstream connection pooling
-- [ ] Basic passthrough — end-to-end request works, no rules yet
+- [x] TCP listener `:80` / `:443`
+- [x] TLS termination (Rustls, cert from memory)
+- [x] HTTP/1.1 + HTTP/2 (Hyper)
+- [x] `RequestContext` type
+- [x] Upstream connection pooling
+- [x] Basic passthrough — end-to-end request works, no rules yet
 
 ### 2.3 Config sync client
 - [ ] Startup config pull (`GET /internal/config/{nodeId}`)
@@ -97,14 +97,14 @@
 - [ ] Atomic config swap
 
 ### 2.4 Request pipeline
-- [ ] `Inspector` — real IP (XFF), GeoIP (MMDB), ASN, user-agent
-- [ ] `RuleEngine` — compile rule tree at config load, short-circuit eval, cheapest-first condition order
-- [ ] `ActionDispatcher` — allow / block / challenge / rate_limit
+- [x] `Inspector` — real IP (XFF), GeoIP (MMDB), ASN, user-agent
+- [x] `RuleEngine` — compile rule tree at config load, short-circuit eval, cheapest-first condition order
+- [x] `ActionDispatcher` — allow / block / challenge / rate_limit
 
 ### 2.5 Rate limiting
 - [ ] Redis INCR + EXPIRE (Lua, atomic)
-- [ ] Sliding window (two adjacent fixed windows)
-- [ ] Per-rule key namespace
+- [x] Sliding window (two adjacent fixed windows)
+- [x] Per-rule key namespace
 
 ### 2.6 Request log emission
 - [ ] Structured log record per request
@@ -133,18 +133,18 @@
 ## Phase 4 — Challenge Engine
 
 ### 4.1 WASM PoW module (`challenge/pow_wasm/`)
-- [ ] Rust crate: SHA-256 iterator, nonce + counter, difficulty check
-- [ ] `wasm-pack build --target web --release`
-- [ ] Unit tests: known solutions, difficulty boundaries
+- [x] Rust crate: SHA-256 iterator, nonce + counter, difficulty check
+- [x] `wasm-pack build --target web --release`
+- [x] Unit tests: known solutions, difficulty boundaries
 
 ### 4.2 PoW challenge flow
-- [ ] Challenge page — EN/TR, branded UI, progress indicator, WASM bootstrapper
-- [ ] Web Worker — WASM solver, posts result to main thread
-- [ ] `/_veil/challenge/verify` endpoint
-- [ ] Nonce deduplication (Redis SET NX)
+- [x] Challenge page — EN/TR, branded UI, progress indicator, WASM bootstrapper
+- [x] Web Worker — WASM solver, posts result to main thread
+- [x] `/_veil/challenge/verify` endpoint
+- [x] Nonce deduplication (In-Memory implemented, pending Redis)
 - [ ] Risk score evaluation (ASN, header fingerprint, timing)
-- [ ] Challenge token issuance (HMAC-SHA256, HttpOnly Secure cookie, 10min TTL)
-- [ ] Token verification on subsequent requests (in-process)
+- [x] Challenge token issuance (HMAC-SHA256, HttpOnly Secure cookie, 10min TTL)
+- [x] Token verification on subsequent requests (in-process)
 
 ### 4.3 hCaptcha (Tier 2)
 - [ ] Tier 2 challenge page + hCaptcha widget

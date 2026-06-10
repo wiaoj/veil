@@ -1,0 +1,10 @@
+<Project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:noNamespaceSchemaLocation="Directory.Build.xsd">
+  <ItemGroup>
+    <Using Include="Wiaoj.Ddd" />
+    <Using Include="Wiaoj.Ddd.DomainEvents" />
+    <Using Include="Wiaoj.Results" />
+    <Using Include="Wiaoj.Primitives" />
+    <Using Include="Wiaoj.Primitives.Snowflake" />
+  </ItemGroup>
+</Project>

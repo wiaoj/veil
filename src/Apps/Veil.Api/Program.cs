@@ -1,10 +1,23 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using System.Text;
+using Veil.Shared;
+using Wiaoj.Primitives.Obfuscation;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+builder.Services.AddModulith(builder.Configuration, builder.Environment, modules => {
+    modules.AddModule<SharedModule>();
+    modules.AddModule<Veil.Zones.ZoneModule>();
+});
+
+
 var app = builder.Build();
+
+await app.UseModulithAsync();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

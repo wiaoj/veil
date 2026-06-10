@@ -1,4 +1,14 @@
 <Solution>
+  <Folder Name="/Libraries/">
+    <Project Path="../libraries/src/Endpoints/Wiaoj.Endpoints/Wiaoj.Endpoints.csproj" />
+    <Project Path="../libraries/src/Modulith/Wiaoj.Modulith.AspNetCore/Wiaoj.Modulith.AspNetCore.csproj" />
+    <Project Path="../libraries/src/Modulith/Wiaoj.Modulith/Wiaoj.Modulith.csproj" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path="src/Directory.Build.props" />
+    <File Path="ROADMAP.md" />
+    <File Path="README.md" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Veil.Analytics/Veil.Analytics.csproj" />
     <Project Path="src/Veil.Auth/Veil.Auth.csproj" />

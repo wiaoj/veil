@@ -6,4 +6,18 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\libraries\src\Endpoints\Wiaoj.Endpoints\Wiaoj.Endpoints.csproj" />
+    <ProjectReference Include="..\..\..\libraries\src\Modulith\Wiaoj.Modulith.AspNetCore\Wiaoj.Modulith.AspNetCore.csproj" />
+    <ProjectReference Include="..\Veil.Shared\Veil.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.9" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
+  </ItemGroup>
 </Project>

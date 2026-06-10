@@ -130,6 +130,12 @@ impl Config {
                         rule.id
                     )));
                 }
+                if rule.action != Action::RateLimit && rule.rate_limit.is_some() {
+                    return Err(ConfigError::Invalid(format!(
+                        "rule '{}' has rate_limit params but its action is not rate_limit",
+                        rule.id
+                    )));
+                }
             }
         }
         Ok(())
@@ -225,6 +231,18 @@ mod tests {
             r#"{"zones": [{"name": "z", "hosts": ["*"], "upstream": "http://h:1",
                 "rules": [{"id": "r", "priority": 1, "action": "rate_limit",
                            "conditions": []}]}]}"#,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ConfigError::Invalid(_)));
+    }
+
+    #[test]
+    fn rate_limit_params_rejected_on_other_actions() {
+        let err = Config::from_json(
+            r#"{"zones": [{"name": "z", "hosts": ["*"], "upstream": "http://h:1",
+                "rules": [{"id": "r", "priority": 1, "action": "block",
+                           "conditions": [],
+                           "rate_limit": {"requests": 5, "window_secs": 10}}]}]}"#,
         )
         .unwrap_err();
         assert!(matches!(err, ConfigError::Invalid(_)));
