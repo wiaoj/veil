@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bağlantı Doğrulanıyor &mdash; Veil</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --card-bg: rgba(24, 24, 27, 0.6);
+      --border: rgba(255, 255, 255, 0.08);
+      --text-main: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --accent: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.5);
+      --success: #22c55e;
+      --error: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.12), transparent 25%),
+        radial-gradient(circle at 85% 30%, rgba(147, 51, 234, 0.12), transparent 25%);
+      color: var(--text-main);
+      overflow: hidden;
+    }
+
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 3rem 2.5rem;
+      text-align: center;
+      max-width: 420px;
+      width: 90%;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      animation: fadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      opacity: 0;
+      transform: translateY(20px);
+    }
+
+    @keyframes fadeUp {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .logo-container {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .veil-logo {
+      width: 64px;
+      height: 64px;
+    }
+
+    .veil-path-outer, .veil-path-inner {
+      stroke-dasharray: 120;
+      stroke-dashoffset: 120;
+      animation: draw 1.5s ease-in-out forwards;
+    }
+
+    .veil-path-inner {
+      stroke-dasharray: 60;
+      stroke-dashoffset: 60;
+      animation-delay: 0.4s;
+    }
+
+    @keyframes draw {
+      to { stroke-dashoffset: 0; }
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+      color: var(--text-main);
+    }
+
+    p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── Progress bar ─────────────────────────────────── */
+    .progress-wrap {
+      margin-bottom: 1.5rem;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 4px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), #8b5cf6);
+      border-radius: 2px;
+      transition: width 0.3s ease;
+    }
+
+    .progress-fill.solving {
+      animation: progressPulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes progressPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .status-text {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      min-height: 1.2em;
+    }
+
+    .status-text.success {
+      color: var(--success);
+      font-weight: 500;
+    }
+
+    .status-text.error {
+      color: var(--error);
+      font-weight: 500;
+    }
+
+    .footer {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      opacity: 0.7;
+    }
+
+    .footer svg {
+      width: 14px;
+      height: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo-container">
+      {logo_svg}
+    </div>
+
+    <h1>Bağlantınız doğrulanıyor</h1>
+    <p>Veil, istenen sayfaya erişiminizden önce tarayıcınızı doğruluyor. Bu işlem otomatik olarak gerçekleşir ve yalnızca birkaç saniye sürer.</p>
+
+    <noscript>
+      <p style="color: #ef4444; font-weight: 500;">
+        Devam etmek için JavaScript gereklidir. Lütfen tarayıcı ayarlarınızdan JavaScript'i etkinleştirin.
+      </p>
+    </noscript>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar">
+        <div class="progress-fill solving" id="progressFill"></div>
+      </div>
+      <div class="status-text" id="statusText">Doğrulanıyor&hellip;</div>
+    </div>
+
+    <div class="footer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+      </svg>
+      Veil Edge tarafından korunmaktadır
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    var NONCE     = "{nonce}";
+    var DIFFICULTY = {difficulty};
+    var VERIFY_URL = "/_veil/challenge/verify";
+    var BATCH_SIZE = 50000;
+
+    var fill   = document.getElementById("progressFill");
+    var status = document.getElementById("statusText");
+
+    // ── Web Worker (inline blob) ───────────────────────
+    var workerCode = function() {
+      self.onmessage = async function(e) {
+        var nonce = e.data.nonce;
+        var difficulty = e.data.difficulty;
+        var batchSize = e.data.batchSize;
+
+        var nonceBytes = new Uint8Array(nonce.length / 2);
+        for (var i = 0; i < nonce.length; i += 2) {
+          nonceBytes[i / 2] = parseInt(nonce.substr(i, 2), 16);
+        }
+
+        var counter = 0;
+        var found = false;
+
+        while (!found) {
+          for (var j = 0; j < batchSize; j++) {
+            var buf = new ArrayBuffer(nonceBytes.length + 8);
+            var view = new Uint8Array(buf);
+            view.set(nonceBytes, 0);
+
+            var c = counter;
+            for (var k = 7; k >= 0; k--) {
+              view[nonceBytes.length + k] = c & 0xff;
+              c = Math.floor(c / 256);
+            }
+
+            var hash = await crypto.subtle.digest("SHA-256", buf);
+            var hashBytes = new Uint8Array(hash);
+
+            var zeros = 0;
+            for (var b = 0; b < hashBytes.length; b++) {
+              if (hashBytes[b] === 0) {
+                zeros += 8;
+              } else {
+                var byte = hashBytes[b];
+                while ((byte & 0x80) === 0 && zeros < 256) {
+                  zeros++;
+                  byte <<= 1;
+                }
+                break;
+              }
+            }
+
+            if (zeros >= difficulty) {
+              var hex = "";
+              var cv = counter;
+              for (var h = 0; h < 16; h++) {
+                hex = "0123456789abcdef"[cv & 0xf] + hex;
+                cv = Math.floor(cv / 16);
+              }
+              self.postMessage({ type: "solved", counter: hex });
+              found = true;
+              break;
+            }
+            counter++;
+          }
+
+          if (!found) {
+            self.postMessage({ type: "progress", iterations: counter });
+          }
+        }
+      };
+    };
+
+    var blob = new Blob(
+      ["(" + workerCode.toString() + ")()"],
+      { type: "application/javascript" }
+    );
+    var worker = new Worker(URL.createObjectURL(blob));
+
+    worker.onmessage = function(e) {
+      var msg = e.data;
+      if (msg.type === "progress") {
+        var pct = Math.min(90, (msg.iterations / 2000000) * 100);
+        fill.style.width = pct + "%";
+      } else if (msg.type === "solved") {
+        fill.style.width = "100%";
+        fill.classList.remove("solving");
+        status.textContent = "Doğrulandı, yönlendiriliyorsunuz\u2026";
+        status.className = "status-text success";
+        submitSolution(msg.counter);
+      }
+    };
+
+    worker.onerror = function() {
+      status.textContent = "Bir hata oluştu. Sayfayı yenileyin.";
+      status.className = "status-text error";
+    };
+
+    worker.postMessage({ nonce: NONCE, difficulty: DIFFICULTY, batchSize: BATCH_SIZE });
+
+    // ── Submit solution ────────────────────────────────
+    function submitSolution(counterHex) {
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", VERIFY_URL, true);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.onload = function() {
+        if (xhr.status === 200) {
+          setTimeout(function() { location.reload(); }, 500);
+        } else {
+          status.textContent = "Doğrulama başarısız. Tekrar deneniyor\u2026";
+          status.className = "status-text error";
+          setTimeout(function() { location.reload(); }, 2000);
+        }
+      };
+      xhr.onerror = function() {
+        status.textContent = "Bağlantı hatası. Tekrar deneniyor\u2026";
+        status.className = "status-text error";
+        setTimeout(function() { location.reload(); }, 2000);
+      };
+      xhr.send(JSON.stringify({ nonce: NONCE, counter: counterHex }));
+    }
+  })();
+  </script>
+</body>
+</html>

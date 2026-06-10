@@ -1,0 +1,37 @@
+{
+  "trust_forwarded_headers": false,
+  "zones": [
+    {
+      "name": "local-dev",
+      "hosts": ["localhost", "127.0.0.1", "*"],
+      "upstream": "http://127.0.0.1:9000",
+      "rules": [
+        {
+          "id": "block-admin",
+          "priority": 10,
+          "action": "block",
+          "conditions": [{ "type": "path_prefix", "value": "/admin" }]
+        },
+        {
+          "id": "block-doc-range",
+          "priority": 20,
+          "action": "block",
+          "conditions": [{ "type": "ip", "value": "203.0.113.0/24" }]
+        },
+        {
+          "id": "challenge-login",
+          "priority": 30,
+          "action": "challenge",
+          "conditions": [{ "type": "path_exact", "value": "/login" }]
+        },
+        {
+          "id": "api-rate-limit",
+          "priority": 40,
+          "action": "rate_limit",
+          "conditions": [{ "type": "path_prefix", "value": "/api" }],
+          "rate_limit": { "requests": 5, "window_secs": 10 }
+        }
+      ]
+    }
+  ]
+}
