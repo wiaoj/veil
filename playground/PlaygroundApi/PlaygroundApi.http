@@ -1,0 +1,6 @@
+@PlaygroundApi_HostAddress = http://localhost:5098
+
+GET {{PlaygroundApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
