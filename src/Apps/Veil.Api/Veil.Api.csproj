@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Veil.EdgeNodes\Veil.EdgeNodes.csproj" />
     <ProjectReference Include="..\..\Veil.Zones\Veil.Zones.csproj" />
   </ItemGroup>
 

@@ -36,10 +36,10 @@
 - [ ] Seed: default admin user
 
 ### 1.5 Veil.EdgeNodes — Domain & Persistence
-- [ ] `EdgeNode` entity, `EdgeNodeId`
-- [ ] `ConfigPushLog` entity
-- [ ] `EdgeNodesDbContext` with own schema (`edge_nodes`)
-- [ ] EF Core configuration + initial migration
+- [x] `EdgeNode` entity, `EdgeNodeId` (hashed node token, status, last-seen)
+- [x] `ConfigPushLog` entity
+- [x] `EdgeNodesDbContext` with own schema (`edge_nodes`)
+- [x] EF Core configuration + initial migration
 
 ### 1.6 Veil.Zones — Application
 > Implemented as vertical-slice endpoint features (no separate command/handler layer) — the control plane is low-traffic, so endpoints live inside each feature.
@@ -61,8 +61,9 @@
 - [ ] `RevokeApiKeyCommand` + handler
 
 ### 1.8 Veil.EdgeNodes — Application
-- [ ] `RegisterEdgeNodeCommand` + handler
-- [ ] `ListEdgeNodesQuery` + handler
+> Endpoint slices, same pattern as Zones.
+- [x] `RegisterEdgeNode` — issues one-time node token (SHA-256 hash stored)
+- [x] `ListEdgeNodes` (paginated)
 
 ### 1.9 Veil.Api
 - [x] `Program.cs` — DI wiring (Modulith), string enum binding, middleware pipeline
@@ -70,7 +71,7 @@
 - [x] Zones endpoint group — full CRUD, pause/resume
 - [x] Rules endpoint group — full CRUD, reorder
 - [ ] Auth endpoint group — login, refresh, API key management
-- [ ] EdgeNodes endpoint group — register, list
+- [x] EdgeNodes endpoint group — register, list
 - [x] RFC 9457 error responses throughout
 
 ---

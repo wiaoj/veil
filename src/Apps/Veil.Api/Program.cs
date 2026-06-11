@@ -20,6 +20,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddModulith(builder.Configuration, builder.Environment, modules => {
     modules.AddModule<SharedModule>();
     modules.AddModule<Veil.Zones.ZoneModule>();
+    modules.AddModule<Veil.EdgeNodes.EdgeNodesModule>();
 });
 builder.Services.AddModulithAspNetCore();
 
