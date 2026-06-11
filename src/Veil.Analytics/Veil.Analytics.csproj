@@ -1,9 +1,14 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\libraries\src\Modulith\Wiaoj.Modulith.AspNetCore\Wiaoj.Modulith.AspNetCore.csproj" />
+    <ProjectReference Include="..\Veil.Shared\Veil.Shared.csproj" />
+  </ItemGroup>
 
 </Project>

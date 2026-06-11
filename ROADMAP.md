@@ -111,9 +111,9 @@
 - [x] Per-rule key namespace
 
 ### 2.6 Request log emission
-- [ ] Structured log record per request
-- [ ] In-memory ring buffer (100k max)
-- [ ] Batch flush to `Veil.Analytics` — every 500ms or 1000 records
+- [x] Structured log record per request
+- [x] In-memory ring buffer (100k max, drop-oldest, opt-in via `VEIL_ANALYTICS_URL`)
+- [x] Batch flush to `Veil.Analytics` — every 500ms or 1000 records, fire-and-forget
 
 ---
 
@@ -186,10 +186,10 @@
 ## Phase 6 — Analytics Pipeline
 
 ### 6.1 Veil.Analytics worker
-- [ ] Log ingestion endpoint (`POST /ingest`) — edge node token auth
-- [ ] Batch validation + enrichment
-- [ ] ClickHouse bulk insert (`INSERT FORMAT JSONEachRow`)
-- [ ] Fire-and-forget — drop on outage, log metric
+- [x] Log ingestion endpoint (`POST /ingest`) — edge node token auth
+- [x] Batch validation + enrichment (length caps, clock-drift clamp, node id stamping)
+- [x] ClickHouse bulk insert (`INSERT FORMAT JSONEachRow`, schema ensured at startup)
+- [x] Fire-and-forget — drop on outage, log metric
 - [ ] Nightly aggregation → daily summary into PostgreSQL
 
 ### 6.2 Veil.Analytics — Query model & Application
