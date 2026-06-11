@@ -35,6 +35,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = Arc::new(AppState::new(config));
 
+    // TLS termination (Phase 2.2) — enabled by VEIL_TLS_CERT + VEIL_TLS_KEY.
+    if let Some(tls) = veil_edge::tls::settings_from_env()? {
+        let acceptor = veil_edge::tls::build_acceptor(&tls.cert_pem, &tls.key_pem)?;
+        let tls_listener = TcpListener::bind(&tls.listen_addr).await?;
+        info!(addr = %tls.listen_addr, "veil-edge listening (https)");
+        let tls_state = Arc::clone(&state);
+        tokio::spawn(async move {
+            if let Err(err) = proxy::serve_tls(tls_listener, acceptor, tls_state).await {
+                warn!(error = %err, "https listener terminated");
+            }
+        });
+    }
+
     // Request log shipping (Phase 2.6) — enabled by VEIL_ANALYTICS_URL.
     if let (Some(buffer), Some(settings)) =
         (state.analytics.clone(), analytics::shipper::settings_from_env())

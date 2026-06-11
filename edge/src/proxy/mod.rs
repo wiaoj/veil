@@ -150,6 +150,40 @@ pub async fn serve(listener: TcpListener, state: Arc<AppState>) -> std::io::Resu
     }
 }
 
+/// TLS accept loop: same per-connection handling as [`serve`], with a TLS
+/// handshake in front. A failed handshake only costs that connection.
+pub async fn serve_tls(
+    listener: TcpListener,
+    acceptor: tokio_rustls::TlsAcceptor,
+    state: Arc<AppState>,
+) -> std::io::Result<()> {
+    loop {
+        let (stream, peer) = listener.accept().await?;
+        let acceptor = acceptor.clone();
+        let state = Arc::clone(&state);
+        tokio::spawn(async move {
+            let tls_stream = match acceptor.accept(stream).await {
+                Ok(s) => s,
+                Err(err) => {
+                    debug!(%peer, error = %err, "tls handshake failed");
+                    return;
+                }
+            };
+            let io = TokioIo::new(tls_stream);
+            let service = service_fn(move |req| {
+                let state = Arc::clone(&state);
+                async move { Ok::<_, Infallible>(handle(req, peer, state).await) }
+            });
+            if let Err(err) = auto::Builder::new(TokioExecutor::new())
+                .serve_connection_with_upgrades(io, service)
+                .await
+            {
+                debug!(%peer, error = %err, "tls connection closed with error");
+            }
+        });
+    }
+}
+
 pub async fn handle(
     req: Request<Incoming>,
     peer: SocketAddr,

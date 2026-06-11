@@ -87,7 +87,7 @@
 
 ### 2.2 Core proxy
 - [x] TCP listener (configurable HTTP address; `:443` comes with TLS)
-- [ ] TLS termination (Rustls, cert from memory)
+- [x] TLS termination (Rustls/ring, in-memory cert material, ALPN h2+http/1.1; `VEIL_TLS_CERT`/`VEIL_TLS_KEY`)
 - [x] HTTP/1.1 + HTTP/2 (Hyper)
 - [x] `RequestContext` type
 - [x] Upstream connection pooling

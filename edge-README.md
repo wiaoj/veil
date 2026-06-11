@@ -123,7 +123,9 @@ Edge nodes are configured via environment variables. There is no config file —
 | `VEIL_CONTROL_PLANE_URL` | — | **Required.** Control plane base URL |
 | `VEIL_NODE_TOKEN` | — | **Required.** Shared secret for control plane auth |
 | `VEIL_LISTEN_HTTP` | `0.0.0.0:80` | HTTP listener address |
-| `VEIL_LISTEN_HTTPS` | `0.0.0.0:443` | HTTPS listener address |
+| `VEIL_LISTEN_HTTPS` | `127.0.0.1:8443` | HTTPS listener address (active only with TLS configured) |
+| `VEIL_TLS_CERT` | — | PEM certificate chain path; with `VEIL_TLS_KEY` enables the HTTPS listener |
+| `VEIL_TLS_KEY` | — | PEM private key path |
 | `VEIL_REDIS_URL` | `redis://127.0.0.1:6379` | Redis for rate limiting and tokens |
 | `VEIL_GEOIP_PATH` | `/etc/veil/GeoLite2-City.mmdb` | MaxMind MMDB path |
 | `VEIL_LOG_LEVEL` | `info` | Tracing level (`trace`, `debug`, `info`, `warn`, `error`) |
