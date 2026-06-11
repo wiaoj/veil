@@ -17,21 +17,36 @@ use tokio::net::TcpListener;
 use tracing::{debug, info, warn};
 
 use crate::challenge::{ChallengeEngine, VerifySolutionRequest, CHALLENGE_VERIFY_PATH};
+use crate::config::store::ConfigStore;
+use crate::config::sync::NODE_TOKEN_HEADER;
 use crate::config::Config;
 use crate::pipeline::rate_limit::RateLimiter;
 use crate::pipeline::router::UpstreamClient;
 use crate::pipeline::{inspector, router, rules, Verdict};
 use crate::response::{forbidden, json_response, rate_limited, text, ProxyBody};
 
+/// Reserved path where the control plane pushes config updates at runtime.
+pub const CONFIG_PUSH_PATH: &str = "/_veil/internal/config";
+
+/// Config push payloads larger than this are rejected.
+const CONFIG_PUSH_MAX_BYTES: usize = 1024 * 1024;
+
 pub struct AppState {
-    pub config: Config,
+    pub config: ConfigStore,
     pub limiter: RateLimiter,
     pub client: UpstreamClient,
     pub challenge: ChallengeEngine,
+    /// Shared secret authenticating control-plane pushes. `None` disables
+    /// the push receiver entirely (local-file mode).
+    pub node_token: Option<String>,
 }
 
 impl AppState {
     pub fn new(config: Config) -> Self {
+        Self::with_node_token(config, std::env::var("VEIL_NODE_TOKEN").ok())
+    }
+
+    pub fn with_node_token(config: Config, node_token: Option<String>) -> Self {
         let cookie_name =
             std::env::var("VEIL_CHALLENGE_COOKIE").unwrap_or_else(|_| "veil_pass".to_owned());
         let cookie_ttl = std::env::var("VEIL_CHALLENGE_TTL")
@@ -40,10 +55,11 @@ impl AppState {
             .unwrap_or(600);
 
         Self {
-            config,
+            config: ConfigStore::new(config),
             limiter: RateLimiter::new(),
             client: Client::builder(TokioExecutor::new()).build_http(),
             challenge: ChallengeEngine::new(cookie_name, cookie_ttl),
+            node_token,
         }
     }
 }
@@ -76,14 +92,22 @@ pub async fn handle(
     state: Arc<AppState>,
 ) -> Response<ProxyBody> {
     let started = Instant::now();
-    let ctx = inspector::inspect(&req, peer, state.config.trust_forwarded_headers);
+    // Snapshot for the lifetime of this request; concurrent config pushes
+    // never affect a request mid-flight.
+    let config = state.config.load();
+    let ctx = inspector::inspect(&req, peer, config.trust_forwarded_headers);
 
     // ── Reserved path: PoW challenge verification ─────────────────────
     if ctx.path == CHALLENGE_VERIFY_PATH && req.method() == Method::POST {
         return handle_challenge_verify(req, &ctx, &state).await;
     }
 
-    let Some(zone) = state.config.resolve_zone(&ctx.host) else {
+    // ── Reserved path: control-plane config push ──────────────────────
+    if ctx.path == CONFIG_PUSH_PATH && req.method() == Method::POST {
+        return handle_config_push(req, &ctx, &state).await;
+    }
+
+    let Some(zone) = config.resolve_zone(&ctx.host) else {
         let response = text(StatusCode::MISDIRECTED_REQUEST, "421 unknown host\n");
         info!(
             zone = "-",
@@ -179,6 +203,86 @@ async fn handle_challenge_verify(
     );
 
     state.challenge.verify_solution(&solution, ctx.client_ip)
+}
+
+/// Handle `POST /_veil/internal/config` — authenticate the control plane via
+/// the shared node token and atomically swap in the pushed config snapshot.
+async fn handle_config_push(
+    req: Request<Incoming>,
+    ctx: &crate::pipeline::RequestContext,
+    state: &AppState,
+) -> Response<ProxyBody> {
+    let Some(expected_token) = state.node_token.as_deref() else {
+        return json_response(
+            StatusCode::FORBIDDEN,
+            r#"{"error":"push_disabled","detail":"Node runs from a local config file; no node token configured."}"#,
+        );
+    };
+
+    let provided = req
+        .headers()
+        .get(NODE_TOKEN_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !constant_time_eq(provided.as_bytes(), expected_token.as_bytes()) {
+        warn!(client_ip = %ctx.client_ip, "config push with invalid node token rejected");
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            r#"{"error":"invalid_token","detail":"Node token missing or invalid."}"#,
+        );
+    }
+
+    let body_bytes = match req.collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(_) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                r#"{"error":"body_read_failed","detail":"Request body could not be read."}"#,
+            );
+        }
+    };
+
+    if body_bytes.len() > CONFIG_PUSH_MAX_BYTES {
+        return json_response(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            r#"{"error":"body_too_large","detail":"Config payload exceeds 1 MiB."}"#,
+        );
+    }
+
+    let raw = match std::str::from_utf8(&body_bytes) {
+        Ok(raw) => raw,
+        Err(_) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                r#"{"error":"invalid_utf8","detail":"Config payload is not valid UTF-8."}"#,
+            );
+        }
+    };
+
+    match Config::from_json(raw) {
+        Ok(config) => {
+            let zones = config.zones.len();
+            state.config.swap(config);
+            info!(zones, client_ip = %ctx.client_ip, "config push applied");
+            json_response(StatusCode::OK, &format!(r#"{{"ok":true,"zones":{zones}}}"#))
+        }
+        Err(err) => {
+            warn!(error = %err, "config push rejected: invalid config");
+            json_response(
+                StatusCode::BAD_REQUEST,
+                &format!(r#"{{"error":"invalid_config","detail":"{err}"}}"#).replace('\n', " "),
+            )
+        }
+    }
+}
+
+/// Constant-time byte comparison for the node token; avoids leaking the
+/// match length through response timing.
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    left.iter().zip(right).fold(0u8, |acc, (l, r)| acc | (l ^ r)) == 0
 }
 
 async fn forward_or_502(

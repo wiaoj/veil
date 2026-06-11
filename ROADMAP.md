@@ -92,11 +92,11 @@
 - [x] Basic passthrough — end-to-end request works, no rules yet
 
 ### 2.3 Config sync client
-- [ ] Startup config pull (`GET /internal/config/{nodeId}`)
-- [ ] `Arc<RwLock<Config>>` in-memory store
-- [ ] Push receiver (`POST /_veil/internal/config`)
-- [ ] HMAC signature verification
-- [ ] Atomic config swap
+- [x] Startup config pull (`GET /internal/config/{nodeId}`, local file fallback)
+- [x] `Arc<RwLock<Config>>` in-memory store (`ConfigStore`)
+- [x] Push receiver (`POST /_veil/internal/config`, constant-time node token check)
+- [ ] HMAC signature verification over push body (with ConfigSync worker, Phase 3.2)
+- [x] Atomic config swap
 
 ### 2.4 Request pipeline
 - [x] `Inspector` — real IP (XFF), user-agent (GeoIP MMDB + ASN pending)
@@ -118,8 +118,8 @@
 ## Phase 3 — Config Push Pipeline
 
 ### 3.1 Internal config endpoint (Veil.Api)
-- [ ] `GET /internal/config/{nodeId}` — full zone snapshot
-- [ ] `X-Veil-Node-Token` authentication
+- [x] `GET /internal/config/{nodeId}` — full zone snapshot in the edge's canonical format (fail-safe mapping: unsupported conditions/actions drop the whole rule)
+- [x] `X-Veil-Node-Token` authentication (SHA-256 hash compare, marks node seen)
 
 ### 3.2 Veil.ConfigSync worker
 - [ ] In-process event bus — subscribe to `ZoneConfigChangedEvent`

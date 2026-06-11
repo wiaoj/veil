@@ -9,6 +9,7 @@ using Veil.EdgeNodes.Domain.ValueObjects;
 using Veil.EdgeNodes.Infrastructure.Persistence;
 using Veil.Shared;
 using Wiaoj.Endpoints;
+using Wiaoj.Primitives.Cryptography.Hashing;
 
 namespace Veil.EdgeNodes.Features.EdgeNodes.RegisterEdgeNode;
 
@@ -61,7 +62,7 @@ public sealed class RegisterEdgeNodeEndpoint : IEndpoint {
         // The plaintext token leaves the control plane exactly once, in this
         // response. Only the SHA-256 hash is persisted.
         string token = $"vnt_{Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32))}";
-        string tokenHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+        string tokenHash = Sha256Hash.Compute(token).ToHexString().ToLower();
 
         Result<EdgeNode> node = EdgeNode.Register(req.Name, address, tokenHash, timeProvider.GetUtcNow());
         if(node.IsFailure) return node.ToProblemDetails();
