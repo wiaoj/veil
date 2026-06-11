@@ -5,6 +5,7 @@
 //! loads a JSON file (`VEIL_CONFIG_PATH`, default `veil.json`) with the same
 //! shape the config sync payload will use.
 
+pub mod cache;
 pub mod store;
 pub mod sync;
 

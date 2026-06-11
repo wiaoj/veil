@@ -3,6 +3,7 @@
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -17,6 +18,7 @@ use tokio::net::TcpListener;
 use tracing::{debug, info, warn};
 
 use crate::challenge::{ChallengeEngine, VerifySolutionRequest, CHALLENGE_VERIFY_PATH};
+use crate::config::cache;
 use crate::config::store::ConfigStore;
 use crate::config::sync::NODE_TOKEN_HEADER;
 use crate::config::Config;
@@ -39,14 +41,29 @@ pub struct AppState {
     /// Shared secret authenticating control-plane pushes. `None` disables
     /// the push receiver entirely (local-file mode).
     pub node_token: Option<String>,
+    /// Last-known-good snapshot location (`VEIL_CONFIG_CACHE`). `None`
+    /// disables cache writes.
+    pub config_cache_path: Option<PathBuf>,
 }
 
 impl AppState {
     pub fn new(config: Config) -> Self {
-        Self::with_node_token(config, std::env::var("VEIL_NODE_TOKEN").ok())
+        Self::with_options(
+            config,
+            std::env::var("VEIL_NODE_TOKEN").ok(),
+            cache::path_from_env(),
+        )
     }
 
     pub fn with_node_token(config: Config, node_token: Option<String>) -> Self {
+        Self::with_options(config, node_token, None)
+    }
+
+    pub fn with_options(
+        config: Config,
+        node_token: Option<String>,
+        config_cache_path: Option<PathBuf>,
+    ) -> Self {
         let cookie_name =
             std::env::var("VEIL_CHALLENGE_COOKIE").unwrap_or_else(|_| "veil_pass".to_owned());
         let cookie_ttl = std::env::var("VEIL_CHALLENGE_TTL")
@@ -60,6 +77,7 @@ impl AppState {
             client: Client::builder(TokioExecutor::new()).build_http(),
             challenge: ChallengeEngine::new(cookie_name, cookie_ttl),
             node_token,
+            config_cache_path,
         }
     }
 }
@@ -263,6 +281,9 @@ async fn handle_config_push(
         Ok(config) => {
             let zones = config.zones.len();
             state.config.swap(config);
+            if let Some(path) = &state.config_cache_path {
+                cache::store(path, raw);
+            }
             info!(zones, client_ip = %ctx.client_ip, "config push applied");
             json_response(StatusCode::OK, &format!(r#"{{"ok":true,"zones":{zones}}}"#))
         }

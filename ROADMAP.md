@@ -92,7 +92,9 @@
 - [x] Basic passthrough — end-to-end request works, no rules yet
 
 ### 2.3 Config sync client
-- [x] Startup config pull (`GET /internal/config/{nodeId}`, local file fallback)
+- [x] Startup config pull (`GET /internal/config/{nodeId}`) with retry/backoff
+- [x] Two explicit modes: control plane (no silent dev-file fallback — fail fast) vs local file
+- [x] Last-known-good snapshot cache (opt-in `VEIL_CONFIG_CACHE`; written on pull/push, read when control plane unreachable at startup)
 - [x] `Arc<RwLock<Config>>` in-memory store (`ConfigStore`)
 - [x] Push receiver (`POST /_veil/internal/config`, constant-time node token check)
 - [ ] HMAC signature verification over push body (with ConfigSync worker, Phase 3.2)

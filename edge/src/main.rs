@@ -4,7 +4,7 @@ use tokio::net::TcpListener;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
-use veil_edge::config::{sync, Config};
+use veil_edge::config::{cache, sync, Config};
 use veil_edge::proxy::{self, AppState};
 
 #[tokio::main]
@@ -36,29 +36,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Control plane first (when `VEIL_CONTROL_PLANE_URL`, `VEIL_NODE_ID` and
-/// `VEIL_NODE_TOKEN` are all set), local config file as fallback.
+/// Two explicit modes, no crossover:
+///
+/// **Control plane mode** (`VEIL_CONTROL_PLANE_URL` + `VEIL_NODE_ID` +
+/// `VEIL_NODE_TOKEN` all set): pull with retry/backoff; on failure fall back
+/// to the last-known-good cache (`VEIL_CONFIG_CACHE`, opt-in) — and if there
+/// is none, refuse to start. A protection node must never silently come up
+/// with the local dev file instead of its real rule set.
+///
+/// **Local file mode** (control plane not configured): `VEIL_CONFIG_PATH`.
 async fn load_startup_config() -> Result<Config, Box<dyn std::error::Error>> {
-    if let Some(settings) = sync::settings_from_env() {
-        info!(
-            control_plane = %settings.control_plane_url,
-            node_id = %settings.node_id,
-            "pulling config from control plane"
-        );
-        match sync::fetch_initial(&settings).await {
-            Ok(config) => {
-                info!(zones = config.zones.len(), "config pulled from control plane");
-                return Ok(config);
+    let Some(settings) = sync::settings_from_env() else {
+        let config_path =
+            std::env::var("VEIL_CONFIG_PATH").unwrap_or_else(|_| "veil.json".to_owned());
+        let config = Config::from_file(&config_path)?;
+        info!(config = %config_path, zones = config.zones.len(), "config loaded from local file");
+        return Ok(config);
+    };
+
+    info!(
+        control_plane = %settings.control_plane_url,
+        node_id = %settings.node_id,
+        "pulling config from control plane"
+    );
+
+    match sync::fetch_with_retry(&settings).await {
+        Ok((config, raw)) => {
+            info!(zones = config.zones.len(), "config pulled from control plane");
+            if let Some(path) = cache::path_from_env() {
+                cache::store(&path, &raw);
             }
-            Err(err) => {
-                warn!(error = %err, "control plane pull failed; falling back to local config file");
-            }
+            Ok(config)
+        }
+        Err(err) => {
+            warn!(error = %err, "control plane unreachable after retries");
+
+            let Some(path) = cache::path_from_env() else {
+                return Err(
+                    "control plane unreachable and VEIL_CONFIG_CACHE is not set; \
+                     refusing to start without a trusted config"
+                        .into(),
+                );
+            };
+
+            let config = cache::load(&path).map_err(|cache_err| {
+                format!(
+                    "control plane unreachable and config cache at '{}' is unusable ({cache_err}); \
+                     refusing to start without a trusted config",
+                    path.display()
+                )
+            })?;
+
+            warn!(
+                cache = %path.display(),
+                zones = config.zones.len(),
+                "starting from last-known-good config cache; config may be stale"
+            );
+            Ok(config)
         }
     }
-
-    let config_path =
-        std::env::var("VEIL_CONFIG_PATH").unwrap_or_else(|_| "veil.json".to_owned());
-    let config = Config::from_file(&config_path)?;
-    info!(config = %config_path, zones = config.zones.len(), "config loaded from local file");
-    Ok(config)
 }

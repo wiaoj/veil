@@ -313,6 +313,44 @@ async fn config_push_rejects_invalid_config() {
 }
 
 #[tokio::test]
+async fn config_push_updates_last_known_good_cache() {
+    let upstream = spawn_upstream().await;
+
+    let cache_path = std::env::temp_dir().join(format!(
+        "veil-push-cache-test-{}.json",
+        std::process::id()
+    ));
+    std::fs::remove_file(&cache_path).ok();
+
+    let config = Config::from_json(&format!(
+        r#"{{"zones": [{{"name": "test", "hosts": ["*"],
+            "upstream": "http://{upstream}", "rules": []}}]}}"#
+    ))
+    .unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy = listener.local_addr().unwrap();
+    let state = AppState::with_options(
+        config,
+        Some(NODE_TOKEN.to_owned()),
+        Some(cache_path.clone()),
+    );
+    tokio::spawn(proxy::serve(listener, Arc::new(state)));
+
+    let pushed = format!(
+        r#"{{"zones": [{{"name": "pushed", "hosts": ["*"],
+            "upstream": "http://{upstream}", "rules": []}}]}}"#
+    );
+    let response = push_config(proxy, Some(NODE_TOKEN), &pushed).await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // The cache now holds exactly the pushed snapshot.
+    let cached = veil_edge::config::cache::load(&cache_path).unwrap();
+    assert_eq!(cached.zones[0].name, "pushed");
+
+    std::fs::remove_file(&cache_path).ok();
+}
+
+#[tokio::test]
 async fn config_push_disabled_without_node_token() {
     let upstream = spawn_upstream().await;
     // spawn_proxy uses AppState::new — node token comes from the environment,
