@@ -21,6 +21,9 @@ public static class EdgeConfigEndpoints {
     public static void Map(WebApplication app) {
         app.MapGet("/internal/config/{nodeId}", Handle)
            .WithName("GetEdgeConfigSnapshot")
+           // Authenticates with the node token, not a user session — must
+           // bypass the fallback authorization policy.
+           .AllowAnonymous()
            .ExcludeFromDescription();
     }
 

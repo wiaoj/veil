@@ -27,6 +27,7 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddModulith(builder.Configuration, builder.Environment, modules => {
     modules.AddModule<SharedModule>();
+    modules.AddModule<Veil.Auth.AuthModule>();
     modules.AddModule<ZoneModule>();
     modules.AddModule<EdgeNodesModule>();
 });
@@ -84,7 +85,7 @@ Veil.Api.Internal.EdgeConfigEndpoints.Map(app);
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
 }
 
 app.UseHttpsRedirection();

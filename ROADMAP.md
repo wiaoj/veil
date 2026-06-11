@@ -27,13 +27,13 @@
 - [x] EF Core configuration + initial migration (jsonb columns via persistence DTOs)
 
 ### 1.4 Veil.Auth — Domain & Persistence
-- [ ] `User` entity, `UserId`, `UserRole`
-- [ ] `ApiKey` entity, `ApiKeyId`, scopes
-- [ ] JWT issuance + refresh token logic
-- [ ] API key hashing + verification
-- [ ] `AuthDbContext` with own schema (`auth`)
-- [ ] EF Core configuration + initial migration
-- [ ] Seed: default admin user
+- [x] `User` entity, `UserId`, `UserRole`
+- [x] `ApiKey` entity, `ApiKeyId`, scopes
+- [x] JWT issuance (HMAC-SHA256, obfuscated sub) + refresh token rotation (hashed, single-use, replay-detectable)
+- [x] API key hashing + verification (SHA-256, shown once)
+- [x] `AuthDbContext` with own schema (`auth`) + outbox
+- [x] EF Core configuration + initial migration
+- [x] Seed: default admin user (`Auth:AdminPassword` unset → generated + logged once)
 
 ### 1.5 Veil.EdgeNodes — Domain & Persistence
 - [x] `EdgeNode` entity, `EdgeNodeId` (hashed node token, status, last-seen)
@@ -55,10 +55,12 @@
 - [x] `GetZoneRules`
 
 ### 1.7 Veil.Auth — Application
-- [ ] `LoginCommand` + handler
-- [ ] `RefreshTokenCommand` + handler
-- [ ] `CreateApiKeyCommand` + handler
-- [ ] `RevokeApiKeyCommand` + handler
+> Endpoint slices, same pattern as Zones.
+- [x] `Login`
+- [x] `RefreshAccessToken` (rotation)
+- [x] `CreateApiKey` (JWT-only — an API key cannot mint keys)
+- [x] `ListApiKeys`
+- [x] `RevokeApiKey`
 
 ### 1.8 Veil.EdgeNodes — Application
 > Endpoint slices, same pattern as Zones.
@@ -67,10 +69,10 @@
 
 ### 1.9 Veil.Api
 - [x] `Program.cs` — DI wiring (Modulith), string enum binding, middleware pipeline
-- [ ] JWT + API key authentication middleware
+- [x] JWT + API key authentication (fallback policy: everything protected by default; login/refresh/internal endpoints opt out)
 - [x] Zones endpoint group — full CRUD, pause/resume
 - [x] Rules endpoint group — full CRUD, reorder
-- [ ] Auth endpoint group — login, refresh, API key management
+- [x] Auth endpoint group — login, refresh, API key management
 - [x] EdgeNodes endpoint group — register, list
 - [x] RFC 9457 error responses throughout
 
