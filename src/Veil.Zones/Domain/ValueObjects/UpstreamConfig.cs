@@ -26,6 +26,19 @@ public sealed class UpstreamConfig {
         this.PassHostHeader = passHostHeader;
     }
 
+    /// <summary>
+    /// Persistence-only factory: trusts previously validated data coming back
+    /// from the database and bypasses <see cref="Create"/> validation.
+    /// </summary>
+    internal static UpstreamConfig Restore(
+        IReadOnlyList<UpstreamTarget> targets,
+        LoadBalanceStrategy strategy,
+        TimeSpan connectTimeout,
+        TimeSpan responseTimeout,
+        bool passHostHeader) {
+        return new UpstreamConfig(targets, strategy, connectTimeout, responseTimeout, passHostHeader);
+    }
+
     public static Result<UpstreamConfig> Create(
         IReadOnlyList<UpstreamTarget> targets,
         LoadBalanceStrategy strategy = LoadBalanceStrategy.RoundRobin,

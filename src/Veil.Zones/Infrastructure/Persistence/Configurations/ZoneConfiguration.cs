@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using System.Text.Json;
 using Veil.Zones.Domain;
 using Veil.Zones.Domain.ValueObjects;
 
@@ -11,11 +12,14 @@ public sealed class ZoneConfiguration : IEntityTypeConfiguration<Zone> {
 
         builder.HasKey(x => x.Id);
 
+        // Optimistic concurrency via the aggregate's RowVersion is deferred
+        // until Wiaoj.Ddd.EntityFrameworkCore (ApplyDddConventions) is adopted.
+        builder.Ignore(x => x.Version);
+
         builder.Property(x => x.Id)
             .HasConversion(
                 id => id.Value.Value,
-                value => ZoneId.From(value))
-            .HasMaxLength(32);
+                value => ZoneId.From(value));
 
         builder.Property(x => x.Status)
             .HasConversion<string>()
@@ -26,17 +30,26 @@ public sealed class ZoneConfiguration : IEntityTypeConfiguration<Zone> {
                 .HasColumnName("hostname")
                 .HasMaxLength(255)
                 .IsRequired();
-            // We ignore IsWildcard for DB, it can be computed or we map it
-            b.Ignore(h => h.IsWildcard);
         });
 
-        builder.OwnsOne(x => x.Upstream, b => {
-            b.ToJson();
-        });
+        // Upstream and Challenge are stored as jsonb through persistence DTOs
+        // (JsonColumnData) because the domain value objects are not
+        // constructible by EF or System.Text.Json by design.
+        builder.Property(x => x.Upstream)
+            .HasColumnName("upstream")
+            .HasColumnType("jsonb")
+            .IsRequired()
+            .HasConversion(
+                v => JsonSerializer.Serialize(UpstreamConfigData.FromDomain(v), JsonSerializerOptions.Default),
+                v => JsonSerializer.Deserialize<UpstreamConfigData>(v, JsonSerializerOptions.Default)!.ToDomain());
 
-        builder.OwnsOne(x => x.Challenge, b => {
-            b.ToJson();
-        });
+        builder.Property(x => x.Challenge)
+            .HasColumnName("challenge")
+            .HasColumnType("jsonb")
+            .IsRequired()
+            .HasConversion(
+                v => JsonSerializer.Serialize(ChallengeConfigData.FromDomain(v), JsonSerializerOptions.Default),
+                v => JsonSerializer.Deserialize<ChallengeConfigData>(v, JsonSerializerOptions.Default)!.ToDomain());
 
         // Rules are mapped in RuleConfiguration
         builder.HasMany(x => x.Rules)

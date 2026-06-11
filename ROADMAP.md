@@ -6,8 +6,8 @@
 
 ### 1.1 Repository & Tooling
 - [x] Solution structure: `Veil.sln`, module projects, `Apps/` projects
-- [ ] `docker-compose.yml` — PostgreSQL, Redis (3 instances: rate-limit, tokens, config), ClickHouse
-- [ ] `.env.example` with all required variables
+- [x] `docker-compose.yml` — PostgreSQL, Redis (3 instances: rate-limit, tokens, config), ClickHouse
+- [ ] `.env.example` with all required variables (edge done, control plane pending)
 - [ ] CI pipeline (GitHub Actions) — build, test, lint on PR
 
 ### 1.2 Veil.Shared
@@ -16,15 +16,15 @@
 - [x] Snowflake ID generator via Wiaoj.Primitives.Snowflake
 - [x] Prefixed + obfuscated ID helpers (prefix registry, Hashids encoding/decoding)
 - [x] `Wiaoj.Results` — `Result<T>` type, error types, Minimal API extension (`ToHttpResult()`)
-- [ ] RFC 9457 `ProblemDetails` error response shaping
+- [x] RFC 9457 `ProblemDetails` error response shaping (`ToProblemDetails()` via Wiaoj.Results.AspNetCore)
 
 ### 1.3 Veil.Zones — Domain & Persistence
 - [x] `Zone` aggregate, `ZoneId` (prefixed Snowflake), `ZoneStatus`
 - [x] `Rule` entity, `RuleId`, `RuleCondition` (all condition types), `RuleAction`
 - [x] `UpstreamConfig`, `ChallengeConfig` value objects
-- [ ] `ZoneConfigChangedEvent` domain event
-- [ ] `ZonesDbContext` with own schema (`zones`)
-- [ ] EF Core configuration + initial migration
+- [x] `ZoneConfigChangedEvent` domain event
+- [x] `ZonesDbContext` with own schema (`zones`)
+- [x] EF Core configuration + initial migration (jsonb columns via persistence DTOs)
 
 ### 1.4 Veil.Auth — Domain & Persistence
 - [ ] `User` entity, `UserId`, `UserRole`
@@ -42,16 +42,17 @@
 - [ ] EF Core configuration + initial migration
 
 ### 1.6 Veil.Zones — Application
-- [ ] `CreateZoneCommand` + handler
-- [ ] `UpdateZoneUpstreamCommand` + handler
-- [ ] `PauseZoneCommand` / `ResumeZoneCommand` + handlers
-- [ ] `AddRuleCommand` + handler
-- [ ] `UpdateRuleCommand` + handler
-- [ ] `DeleteRuleCommand` + handler
-- [ ] `ReorderRulesCommand` + handler
-- [ ] `GetZoneQuery` + handler
-- [ ] `ListZonesQuery` + handler (paginated)
-- [ ] `GetZoneRulesQuery` + handler
+> Implemented as vertical-slice endpoint features (no separate command/handler layer) — the control plane is low-traffic, so endpoints live inside each feature.
+- [x] `CreateZone` (+ `UpdateChallenge`)
+- [x] `UpdateZoneUpstream`
+- [x] `PauseZone` / `ResumeZone`
+- [x] `AddRule`
+- [x] `UpdateRule` (priority / enabled)
+- [x] `DeleteRule`
+- [x] `ReorderRules`
+- [x] `GetZone`
+- [x] `ListZones` (paginated)
+- [x] `GetZoneRules`
 
 ### 1.7 Veil.Auth — Application
 - [ ] `LoginCommand` + handler
@@ -64,26 +65,26 @@
 - [ ] `ListEdgeNodesQuery` + handler
 
 ### 1.9 Veil.Api
-- [ ] `Program.cs` — DI wiring, middleware pipeline
+- [x] `Program.cs` — DI wiring (Modulith), string enum binding, middleware pipeline
 - [ ] JWT + API key authentication middleware
-- [ ] Zones endpoint group — full CRUD, pause/resume
-- [ ] Rules endpoint group — full CRUD, reorder
+- [x] Zones endpoint group — full CRUD, pause/resume
+- [x] Rules endpoint group — full CRUD, reorder
 - [ ] Auth endpoint group — login, refresh, API key management
 - [ ] EdgeNodes endpoint group — register, list
-- [ ] RFC 9457 error responses throughout
+- [x] RFC 9457 error responses throughout
 
 ---
 
 ## Phase 2 — Edge Node (Rust)
 
 ### 2.1 Project skeleton
-- [x] `Cargo.toml` — Tokio, Hyper, Rustls
-- [x] Env var loading, runtime setup
-- [x] Structured logging (`tracing` + JSON)
+- [x] `Cargo.toml` — Tokio, Hyper (Rustls pending with TLS work)
+- [x] Env var loading (dotenvy), runtime setup
+- [x] Structured logging via `tracing` (JSON formatter pending)
 
 ### 2.2 Core proxy
-- [x] TCP listener `:80` / `:443`
-- [x] TLS termination (Rustls, cert from memory)
+- [x] TCP listener (configurable HTTP address; `:443` comes with TLS)
+- [ ] TLS termination (Rustls, cert from memory)
 - [x] HTTP/1.1 + HTTP/2 (Hyper)
 - [x] `RequestContext` type
 - [x] Upstream connection pooling
@@ -97,8 +98,8 @@
 - [ ] Atomic config swap
 
 ### 2.4 Request pipeline
-- [x] `Inspector` — real IP (XFF), GeoIP (MMDB), ASN, user-agent
-- [x] `RuleEngine` — compile rule tree at config load, short-circuit eval, cheapest-first condition order
+- [x] `Inspector` — real IP (XFF), user-agent (GeoIP MMDB + ASN pending)
+- [x] `RuleEngine` — priority-ordered short-circuit eval (compiled decision tree + cheapest-first ordering pending)
 - [x] `ActionDispatcher` — allow / block / challenge / rate_limit
 
 ### 2.5 Rate limiting

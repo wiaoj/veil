@@ -13,6 +13,14 @@ public sealed record RateLimitConfig {
         this.WindowSecs = windowSecs;
     }
 
+    /// <summary>
+    /// Persistence-only factory: trusts previously validated data coming back
+    /// from the database.
+    /// </summary>
+    internal static RateLimitConfig Restore(int requests, int windowSecs) {
+        return new RateLimitConfig(requests, windowSecs);
+    }
+
     public static Result<RateLimitConfig> Create(int requests, int windowSecs) {
         if(requests < 1)
             return RuleErrors.RateLimitRequestsInvalid;

@@ -21,6 +21,7 @@ builder.Services.AddModulith(builder.Configuration, builder.Environment, modules
     modules.AddModule<SharedModule>();
     modules.AddModule<Veil.Zones.ZoneModule>();
 });
+builder.Services.AddModulithAspNetCore();
 
 
 var app = builder.Build();

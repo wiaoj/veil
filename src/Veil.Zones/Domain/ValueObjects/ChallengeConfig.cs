@@ -30,6 +30,22 @@ public sealed class ChallengeConfig {
         this.RequireCaptchaOnHighRisk = requireCaptchaOnHighRisk;
     }
 
+    /// <summary>
+    /// Persistence-only factory: trusts previously validated data coming back
+    /// from the database.
+    /// </summary>
+    internal static ChallengeConfig Restore(
+        bool enabled,
+        int powDifficulty,
+        TimeSpan tokenTtl,
+        bool requireCaptchaOnHighRisk) {
+        return new ChallengeConfig(
+            enabled,
+            PowDifficulty.Create(powDifficulty).Value,
+            TokenTtl.Create(tokenTtl).Value,
+            requireCaptchaOnHighRisk);
+    }
+
     public static ChallengeConfig CreateDefault() {
         return new ChallengeConfig(
             true,

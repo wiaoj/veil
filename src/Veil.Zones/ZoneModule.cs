@@ -12,8 +12,10 @@ public sealed class ZoneModule : IWebModule {
     public string Name => nameof(ZoneModule);
 
     public void Register(IServiceCollection services, IConfiguration configuration) {
-        string? connectionString = configuration.GetConnectionString("Zones")
-            ?? configuration.GetConnectionString("Default");
+        // Modules share one PostgreSQL database; isolation is per-schema
+        // (zones, auth, edge_nodes...), not per-connection. A module gets its
+        // own connection string only if it is ever extracted into a service.
+        string? connectionString = configuration.GetConnectionString("Default");
 
         services.AddDbContextFactory<ZonesDbContext>(options => options.UseNpgsql(connectionString));
     }
