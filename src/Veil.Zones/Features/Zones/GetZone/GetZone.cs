@@ -17,8 +17,8 @@ public sealed record GetZoneResponse(
     string Id,
     string Hostname,
     string Status,
-    UpstreamConfigDto Upstream,
-    ChallengeConfigDto Challenge,
+    UpstreamConfigResponse Upstream,
+    ChallengeConfigResponse Challenge,
     List<RuleResponse> Rules);
 
 public sealed class GetZoneEndpoint : IEndpoint {
@@ -58,8 +58,8 @@ public sealed class GetZoneEndpoint : IEndpoint {
             zoneObfuscator.EncodeId(zone),
             zone.Hostname.Value,
             zone.Status.ToString(),
-            zone.Upstream.ToDto(),
-            zone.Challenge.ToDto(),
+            zone.Upstream.ToResponse(),
+            zone.Challenge.ToResponse(),
             zone.Rules.Select(r => r.ToResponse(ruleObfuscator)).ToList());
 
         return Results.Ok(response);

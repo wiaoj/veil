@@ -17,14 +17,14 @@ public sealed class UpdateZoneChallengeEndpoint : IEndpoint {
            .WithTags("Zones")
            .WithSummary("Replaces a zone's challenge configuration")
            .WithDescription("Updates PoW difficulty, token TTL and CAPTCHA fallback. Set Enabled=false to disable challenges for the zone.")
-           .Produces<ChallengeConfigDto>(StatusCodes.Status200OK)
+           .Produces<ChallengeConfigResponse>(StatusCodes.Status200OK)
            .ProducesProblem(StatusCodes.Status400BadRequest)
            .ProducesProblem(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IHttpResult> Handle(
         string id,
-        ChallengeConfigDto req,
+        ChallengeConfigRequest req,
         IDbContextFactory<ZonesDbContext> dbFactory,
         IObfuscator<ZoneId> obfuscator,
         CancellationToken cancellationToken) {
@@ -50,6 +50,6 @@ public sealed class UpdateZoneChallengeEndpoint : IEndpoint {
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return Results.Ok(zone.Challenge.ToDto());
+        return Results.Ok(zone.Challenge.ToResponse());
     }
 }

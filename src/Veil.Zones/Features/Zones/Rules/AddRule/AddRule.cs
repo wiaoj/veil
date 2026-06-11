@@ -23,8 +23,8 @@ public sealed record AddRuleRequest(
     string Name,
     int Priority,
     RuleAction Action,
-    List<RuleConditionDto> Conditions,
-    RateLimitDto? RateLimit = null);
+    List<RuleConditionRequest> Conditions,
+    RateLimitRequest? RateLimit = null);
 
 public sealed class AddRuleEndpoint : IEndpoint {
     public void Map(IEndpointRouteBuilder app) {

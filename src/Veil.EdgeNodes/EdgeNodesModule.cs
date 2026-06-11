@@ -27,6 +27,10 @@ public sealed class EdgeNodesModule : IWebModule {
         services.AddDbContextFactory<EdgeNodesDbContext>((sp, options) => options
             .UseNpgsql(connectionString)
             .UseDddInterceptors<EdgeNodesDbContext>(sp));
+
+        // Narrow auth surface consumed by internal endpoints and external
+        // hosts (analytics ingest) instead of the persistence internals.
+        services.AddSingleton<Contracts.IEdgeNodeTokenVerifier, EdgeNodeTokenVerifier>();
     }
 
     public Task ConfigureAsync(IApplicationBuilder app) {

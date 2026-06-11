@@ -18,8 +18,8 @@ namespace Veil.Zones.Features.Zones.CreateZone;
 /// <param name="Challenge">Optional challenge configuration.</param>
 public sealed record CreateZoneRequest(
     string Hostname,
-    UpstreamConfigDto Upstream,
-    ChallengeConfigDto? Challenge);
+    UpstreamConfigRequest Upstream,
+    ChallengeConfigRequest? Challenge);
 
 /// <summary>
 /// The response payload returned upon successful zone creation.

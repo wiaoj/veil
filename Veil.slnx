@@ -13,8 +13,10 @@
     <Project Path="src/Veil.Analytics/Veil.Analytics.csproj" />
     <Project Path="src/Veil.Auth/Veil.Auth.csproj" />
     <Project Path="src/Veil.Certificates/Veil.Certificates.csproj" />
+    <Project Path="src/Veil.EdgeNodes.Contracts/Veil.EdgeNodes.Contracts.csproj" />
     <Project Path="src/Veil.EdgeNodes/Veil.EdgeNodes.csproj" />
     <Project Path="src/Veil.Shared/Veil.Shared.csproj" />
+    <Project Path="src/Veil.Zones.Contracts/Veil.Zones.Contracts.csproj" />
     <Project Path="src/Veil.Zones/Veil.Zones.csproj" />
   </Folder>
   <Folder Name="/src/Apps/">

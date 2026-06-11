@@ -17,14 +17,14 @@ public sealed class UpdateZoneUpstreamEndpoint : IEndpoint {
            .WithTags("Zones")
            .WithSummary("Replaces a zone's upstream configuration")
            .WithDescription("Replaces the upstream targets, load balancing strategy and timeouts. The change is pushed to edge nodes via config sync.")
-           .Produces<UpstreamConfigDto>(StatusCodes.Status200OK)
+           .Produces<UpstreamConfigResponse>(StatusCodes.Status200OK)
            .ProducesProblem(StatusCodes.Status400BadRequest)
            .ProducesProblem(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IHttpResult> Handle(
         string id,
-        UpstreamConfigDto req,
+        UpstreamConfigRequest req,
         IDbContextFactory<ZonesDbContext> dbFactory,
         IObfuscator<ZoneId> obfuscator,
         CancellationToken cancellationToken) {
@@ -50,6 +50,6 @@ public sealed class UpdateZoneUpstreamEndpoint : IEndpoint {
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return Results.Ok(zone.Upstream.ToDto());
+        return Results.Ok(zone.Upstream.ToResponse());
     }
 }

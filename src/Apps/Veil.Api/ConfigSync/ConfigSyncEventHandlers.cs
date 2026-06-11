@@ -1,6 +1,6 @@
 using Tyto;
-using Veil.EdgeNodes.IntegrationEvents;
-using Veil.Zones.IntegrationEvents;
+using Veil.EdgeNodes.Contracts.IntegrationEvents;
+using Veil.Zones.Contracts.IntegrationEvents;
 
 namespace Veil.Api.ConfigSync;
 

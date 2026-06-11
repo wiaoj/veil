@@ -1,17 +1,14 @@
-using Tyto;
 using Veil.Shared;
+using Veil.Zones.Contracts.IntegrationEvents;
 using Veil.Zones.Domain.Events;
 using Veil.Zones.Domain.ValueObjects;
 
 namespace Veil.Zones.IntegrationEvents;
 
-/// <summary>
-/// Published on the bus whenever a zone's effective edge configuration
-/// changes (creation included). Carries the public (obfuscated) zone id —
-/// integration events are cross-module contracts and never leak raw ids.
-/// </summary>
-[Message("zones.config-changed", 1)]
-public sealed record ZoneConfigChanged(string ZoneId, DateTimeOffset OccurredAtUtc) : IEvent;
+// Domain event → integration event mappers, picked up by the module's
+// AddTytoIntegration scan and auto-published post-commit. The events
+// themselves live in Veil.Zones.Contracts — consumers depend on that, not
+// on this module.
 
 public sealed class ZoneConfigChangedMapper(IObfuscator<ZoneId> obfuscator)
     : IIntegrationEventMapper<ZoneConfigChangedDomainEvent, ZoneConfigChanged> {
