@@ -127,7 +127,7 @@ Edge nodes are configured via environment variables. There is no config file —
 | `VEIL_REDIS_URL` | `redis://127.0.0.1:6379` | Redis for rate limiting and tokens |
 | `VEIL_GEOIP_PATH` | `/etc/veil/GeoLite2-City.mmdb` | MaxMind MMDB path |
 | `VEIL_LOG_LEVEL` | `info` | Tracing level (`trace`, `debug`, `info`, `warn`, `error`) |
-| `VEIL_LOG_SINK_URL` | — | Analytics worker endpoint for request log forwarding |
+| `VEIL_ANALYTICS_URL` | — | Analytics worker base URL for request log forwarding (`{url}/ingest`); unset disables emission |
 | `VEIL_WORKER_THREADS` | (CPU count) | Tokio worker thread count |
 
 ---

@@ -1,3 +1,4 @@
+pub mod analytics;
 pub mod challenge;
 pub mod config;
 pub mod pipeline;

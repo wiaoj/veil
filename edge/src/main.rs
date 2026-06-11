@@ -4,6 +4,7 @@ use tokio::net::TcpListener;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
+use veil_edge::analytics;
 use veil_edge::config::{cache, sync, Config};
 use veil_edge::proxy::{self, AppState};
 
@@ -32,7 +33,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "veil-edge listening"
     );
 
-    proxy::serve(listener, Arc::new(AppState::new(config))).await?;
+    let state = Arc::new(AppState::new(config));
+
+    // Request log shipping (Phase 2.6) — enabled by VEIL_ANALYTICS_URL.
+    if let (Some(buffer), Some(settings)) =
+        (state.analytics.clone(), analytics::shipper::settings_from_env())
+    {
+        info!(ingest = %settings.ingest_url, "analytics log shipping enabled");
+        tokio::spawn(analytics::shipper::run(buffer, settings));
+    }
+
+    proxy::serve(listener, state).await?;
     Ok(())
 }
 

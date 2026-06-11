@@ -441,3 +441,46 @@ async fn config_push_disabled_without_node_token() {
     let response = push_config(proxy, Some(NODE_TOKEN), r#"{"zones": []}"#).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn emits_analytics_records_for_proxied_and_blocked_requests() {
+    use veil_edge::analytics::LogBuffer;
+
+    let upstream = spawn_upstream().await;
+    let config = Config::from_json(&format!(
+        r#"{{"zones": [{{"name": "test", "hosts": ["*"],
+            "upstream": "http://{upstream}",
+            "rules": [{{"id": "block-admin", "priority": 10, "action": "block",
+                        "conditions": [{{"type": "path_prefix", "value": "/admin"}}]}}]}}]}}"#
+    ))
+    .unwrap();
+
+    let buffer = Arc::new(LogBuffer::default());
+    let mut state = AppState::with_node_token(config, None);
+    state.analytics = Some(Arc::clone(&buffer));
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy = listener.local_addr().unwrap();
+    tokio::spawn(proxy::serve(listener, Arc::new(state)));
+    let client = client();
+
+    assert_eq!(get(&client, proxy, "/hello").await.status(), StatusCode::OK);
+    assert_eq!(
+        get(&client, proxy, "/admin/x").await.status(),
+        StatusCode::FORBIDDEN
+    );
+
+    let records = buffer.drain(10);
+    assert_eq!(records.len(), 2);
+
+    assert_eq!(records[0].zone, "test");
+    assert_eq!(records[0].path, "/hello");
+    assert_eq!(records[0].status, 200);
+    assert_eq!(records[0].verdict, "allow");
+    assert_eq!(records[0].rule_id, None);
+
+    assert_eq!(records[1].path, "/admin/x");
+    assert_eq!(records[1].status, 403);
+    assert_eq!(records[1].verdict, "block");
+    assert_eq!(records[1].rule_id.as_deref(), Some("block-admin"));
+}

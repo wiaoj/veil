@@ -19,6 +19,7 @@ use sha2::Sha256;
 use tokio::net::TcpListener;
 use tracing::{debug, info, warn};
 
+use crate::analytics::{self, LogBuffer, LogRecord};
 use crate::challenge::{ChallengeEngine, VerifySolutionRequest, CHALLENGE_VERIFY_PATH};
 use crate::config::cache;
 use crate::config::store::ConfigStore;
@@ -62,16 +63,21 @@ pub struct AppState {
     /// Last-known-good snapshot location (`VEIL_CONFIG_CACHE`). `None`
     /// disables cache writes.
     pub config_cache_path: Option<PathBuf>,
+    /// Request log buffer drained by the analytics shipper. `None` disables
+    /// emission entirely (no `VEIL_ANALYTICS_URL`).
+    pub analytics: Option<Arc<LogBuffer>>,
 }
 
 impl AppState {
     pub fn new(config: Config) -> Self {
-        Self::with_options(
+        let mut state = Self::with_options(
             config,
             std::env::var("VEIL_NODE_TOKEN").ok(),
             cache::path_from_env(),
             push_key_from_env(),
-        )
+        );
+        state.analytics = analytics::buffer_from_env();
+        state
     }
 
     pub fn with_node_token(config: Config, node_token: Option<String>) -> Self {
@@ -104,6 +110,7 @@ impl AppState {
             push_hmac_key,
             signature_header,
             config_cache_path,
+            analytics: None,
         }
     }
 }
@@ -149,6 +156,7 @@ pub async fn handle(
     state: Arc<AppState>,
 ) -> Response<ProxyBody> {
     let started = Instant::now();
+    let ts_ms = analytics::now_ms();
     // Snapshot for the lifetime of this request; concurrent config pushes
     // never affect a request mid-flight.
     let config = state.config.load();
@@ -176,6 +184,7 @@ pub async fn handle(
             total_ms = started.elapsed().as_millis() as u64,
             "request"
         );
+        record_request(&state, &ctx, "-", "no_zone", None, response.status().as_u16(), ts_ms, started);
         return response;
     };
 
@@ -216,7 +225,48 @@ pub async fn handle(
         total_ms = started.elapsed().as_millis() as u64,
         "request"
     );
+    record_request(
+        &state,
+        &ctx,
+        &zone.name,
+        label,
+        rule_id,
+        response.status().as_u16(),
+        ts_ms,
+        started,
+    );
     response
+}
+
+/// Queues one analytics record. No-op when emission is disabled; reserved
+/// `/_veil/*` paths never reach here (they return before zone resolution).
+#[allow(clippy::too_many_arguments)]
+fn record_request(
+    state: &AppState,
+    ctx: &crate::pipeline::RequestContext,
+    zone: &str,
+    verdict: &'static str,
+    rule_id: Option<String>,
+    status: u16,
+    ts_ms: u64,
+    started: Instant,
+) {
+    let Some(buffer) = &state.analytics else {
+        return;
+    };
+    buffer.push(LogRecord {
+        ts_ms,
+        zone: zone.to_owned(),
+        host: ctx.host.clone(),
+        method: ctx.method.to_string(),
+        path: ctx.path.clone(),
+        status,
+        verdict,
+        rule_id,
+        client_ip: ctx.client_ip.to_string(),
+        user_agent: ctx.user_agent.clone(),
+        duration_ms: started.elapsed().as_millis() as u64,
+    });
 }
 
 /// Handle `POST /_veil/challenge/verify` — validate PoW solution and issue cookie.
