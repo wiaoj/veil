@@ -218,8 +218,8 @@
 
 ### 7.2 Zones & Rules
 - [x] Zone list, zone detail (upstream/challenge cards, pause/resume, rule enable/disable/delete)
-- [ ] Rule builder — condition composer, action picker, priority drag-and-drop
-- [ ] Create / edit / delete flows
+- [ ] Rule builder — condition composer (single-condition form done; multi-condition + drag-and-drop priority pending)
+- [x] Create / edit / delete flows (zone create, rule add/toggle/delete, pause/resume)
 
 ### 7.3 Analytics
 - [x] Request volume chart (time series — CSS bars on the overview; chart lib later)

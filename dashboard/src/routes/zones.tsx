@@ -29,7 +29,15 @@ function ZonesPage() {
     <main className="mx-auto max-w-5xl space-y-6 px-4 py-8">
       <div className="flex items-baseline justify-between">
         <h1 className="text-2xl font-semibold">Zone'lar</h1>
-        <span className="text-sm text-gray-500">{zones.data?.totalCount ?? 0} kayıt</span>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-gray-500">{zones.data?.totalCount ?? 0} kayıt</span>
+          <Link
+            to="/zones/new"
+            className="rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900"
+          >
+            Yeni zone
+          </Link>
+        </div>
       </div>
 
       {items.length === 0 ? (

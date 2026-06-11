@@ -114,7 +114,109 @@ function ZoneDetailPage() {
           </table>
         )}
       </section>
+
+      <AddRuleForm
+        busy={busy}
+        nextPriority={(z.rules.length === 0 ? 0 : Math.max(...z.rules.map((r) => r.priority))) + 10}
+        onAdd={(body) => mutate(() => apiSend(`/v1/zones/${z.id}/rules`, 'POST', body))}
+      />
     </main>
+  )
+}
+
+const CONDITION_TYPES = [
+  'ip_match',
+  'ip_range',
+  'country',
+  'asn',
+  'path_match',
+  'path_regex',
+  'header',
+  'user_agent',
+] as const
+
+function AddRuleForm({
+  busy,
+  nextPriority,
+  onAdd,
+}: {
+  busy: boolean
+  nextPriority: number
+  onAdd: (body: unknown) => void
+}) {
+  const [name, setName] = useState('')
+  const [action, setAction] = useState('Block')
+  const [type, setType] = useState<string>('path_match')
+  const [value, setValue] = useState('')
+  const [headerName, setHeaderName] = useState('')
+  const [requests, setRequests] = useState(60)
+  const [windowSecs, setWindowSecs] = useState(60)
+
+  function submit(event: React.FormEvent) {
+    event.preventDefault()
+    const condition =
+      type === 'asn'
+        ? { type, asn: Number(value) }
+        : type === 'header'
+          ? { type, name: headerName, value }
+          : { type, value }
+    onAdd({
+      name,
+      priority: nextPriority,
+      action,
+      conditions: [condition],
+      rateLimit: action === 'RateLimit' ? { requests, windowSecs } : null,
+    })
+    setName('')
+    setValue('')
+  }
+
+  const input =
+    'rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900'
+
+  return (
+    <form onSubmit={submit} className="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+      <h2 className="text-sm font-medium">Kural ekle</h2>
+      <div className="flex flex-wrap items-end gap-2">
+        <input required placeholder="Kural adı" value={name} onChange={(e) => setName(e.target.value)} className={input} />
+        <select value={action} onChange={(e) => setAction(e.target.value)} className={input}>
+          <option>Allow</option>
+          <option>Block</option>
+          <option>Challenge</option>
+          <option>RateLimit</option>
+        </select>
+        <select value={type} onChange={(e) => setType(e.target.value)} className={input}>
+          {CONDITION_TYPES.map((t) => (
+            <option key={t}>{t}</option>
+          ))}
+        </select>
+        {type === 'header' && (
+          <input required placeholder="Header adı" value={headerName} onChange={(e) => setHeaderName(e.target.value)} className={input} />
+        )}
+        <input
+          required
+          placeholder={type === 'asn' ? 'ASN (ör. 64500)' : 'Değer'}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className={`${input} font-mono`}
+        />
+        {action === 'RateLimit' && (
+          <>
+            <input type="number" min={1} value={requests} onChange={(e) => setRequests(Number(e.target.value))} className={`${input} w-20`} title="İstek" />
+            <span className="text-sm text-gray-500">istek /</span>
+            <input type="number" min={1} value={windowSecs} onChange={(e) => setWindowSecs(Number(e.target.value))} className={`${input} w-20`} title="Saniye" />
+            <span className="text-sm text-gray-500">sn</span>
+          </>
+        )}
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900"
+        >
+          Ekle
+        </button>
+      </div>
+    </form>
   )
 }
 
