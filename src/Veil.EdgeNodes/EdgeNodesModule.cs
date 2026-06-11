@@ -16,7 +16,17 @@ public sealed class EdgeNodesModule : IWebModule {
         // edge_nodes schema, not a separate connection string.
         string? connectionString = configuration.GetConnectionString("Default");
 
-        services.AddDbContextFactory<EdgeNodesDbContext>(options => options.UseNpgsql(connectionString));
+        // Same outbox → Tyto chain as ZoneModule (see comment there).
+        services.AddDdd(ddd => ddd
+            .AddEntityFrameworkCore<EdgeNodesDbContext>(efcore => efcore.ConfigureOutbox(outbox => {
+                outbox.InitialDelay = TimeSpan.FromSeconds(5);
+                outbox.PollingInterval = TimeSpan.FromSeconds(5);
+            }))
+            .AddTytoIntegration(ServiceLifetime.Singleton, typeof(EdgeNodesModule).Assembly));
+
+        services.AddDbContextFactory<EdgeNodesDbContext>((sp, options) => options
+            .UseNpgsql(connectionString)
+            .UseDddInterceptors<EdgeNodesDbContext>(sp));
     }
 
     public Task ConfigureAsync(IApplicationBuilder app) {

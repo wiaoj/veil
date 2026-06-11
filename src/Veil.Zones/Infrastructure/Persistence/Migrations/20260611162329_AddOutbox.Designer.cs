@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Veil.Zones.Infrastructure.Persistence;
@@ -12,9 +13,11 @@ using Veil.Zones.Infrastructure.Persistence;
 namespace Veil.Zones.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ZonesDbContext))]
-    partial class ZonesDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260611162329_AddOutbox")]
+    partial class AddOutbox
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

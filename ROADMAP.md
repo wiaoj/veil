@@ -125,7 +125,7 @@
 
 ### 3.2 Veil.ConfigSync worker
 > Hosted in Veil.Api for now (the change signal is in-process). Moves to the standalone worker once an outbox + Redis queue exist.
-- [x] In-process change signal — `SaveChangesInterceptor` on `ZonesDbContext` + coalescing capacity-1 channel (replaces per-event plumbing)
+- [x] Event-driven change signal — domain events → transactional outbox (Wiaoj.Ddd) → Tyto in-memory bus → `ZoneConfigChanged` / `EdgeNodeRegistered` handlers (replaces the `SaveChangesInterceptor` + channel plumbing); new node registration triggers an immediate initial push
 - [x] Zone config snapshot serialisation (shared with 3.1)
 - [x] HTTP POST to each registered edge node, HMAC-SHA256 signed body (`ConfigSync:PushHmacKey`); per-node snapshot-hash dedupe; 5-min reconcile pass
 - [x] Push result recorded in `config_push_log`

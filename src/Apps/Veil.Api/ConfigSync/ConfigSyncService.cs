@@ -10,15 +10,16 @@ using Veil.Zones.Domain;
 using Veil.Zones.Domain.ValueObjects;
 using Veil.Zones.EdgeConfig;
 using Veil.Zones.Infrastructure.Persistence;
-using Veil.Zones.Sync;
-using Wiaoj.Primitives.Cryptography.Hashing; 
+using Wiaoj.Primitives.Cryptography.Hashing;
 
 namespace Veil.Api.ConfigSync;
 
 /// <summary>
 /// Pushes zone config snapshots to registered edge nodes whenever the zone
-/// configuration changes (signalled by <see cref="ZoneConfigChangeSignal"/>),
-/// plus a periodic reconcile pass so nodes that missed a push converge.
+/// configuration changes (signalled by <see cref="ConfigPushSignal"/>, fed
+/// by the Tyto event handlers in <see cref="ZoneConfigChangedHandler"/> /
+/// <see cref="EdgeNodeRegisteredHandler"/>), plus a periodic reconcile pass
+/// so nodes that missed a push converge.
 ///
 /// Push bodies are HMAC-SHA256 signed with the shared
 /// <c>ConfigSync:PushHmacKey</c> — the control plane only stores node token
@@ -29,7 +30,7 @@ namespace Veil.Api.ConfigSync;
 /// retry queue / leader election from the roadmap) — deliberately deferred.
 /// </summary>
 public sealed class ConfigSyncService(
-    ZoneConfigChangeSignal signal,
+    ConfigPushSignal signal,
     IDbContextFactory<ZonesDbContext> zonesDbFactory,
     IDbContextFactory<EdgeNodesDbContext> nodesDbFactory,
     IObfuscator<RuleId> ruleObfuscator,
@@ -90,7 +91,7 @@ public sealed class ConfigSyncService(
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         timeout.CancelAfter(ReconcileInterval);
         try {
-            await signal.WaitForChangeAsync(timeout.Token);
+            await signal.WaitAsync(timeout.Token);
             return true;
         }
         catch(OperationCanceledException) {

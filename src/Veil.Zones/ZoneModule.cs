@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Veil.Zones.Infrastructure.Persistence;
-using Veil.Zones.Sync;
 using Wiaoj.Modulith;
 
 namespace Veil.Zones;
@@ -18,11 +17,24 @@ public sealed class ZoneModule : IWebModule {
         // own connection string only if it is ever extracted into a service.
         string? connectionString = configuration.GetConnectionString("Default");
 
-        services.AddSingleton<ZoneConfigChangeSignal>();
+        // Domain events flow through the transactional outbox to the Tyto
+        // bus: SaveChanges persists OutboxMessages in the same transaction,
+        // the outbox processor dispatches post-commit, and the scanned
+        // IIntegrationEventMapper implementations auto-publish to IBus.
+        // Singleton lifetime: contexts come from a singleton factory, so the
+        // whole dispatch chain must be resolvable from the root provider.
+        services.AddDdd(ddd => ddd
+            .AddEntityFrameworkCore<ZonesDbContext>(efcore => efcore.ConfigureOutbox(outbox => {
+                // Config changes must reach edge nodes promptly; the default
+                // 2-minute warmup delay is far too slow for a control plane.
+                outbox.InitialDelay = TimeSpan.FromSeconds(5);
+                outbox.PollingInterval = TimeSpan.FromSeconds(5);
+            }))
+            .AddTytoIntegration(ServiceLifetime.Singleton, typeof(ZoneModule).Assembly));
+
         services.AddDbContextFactory<ZonesDbContext>((sp, options) => options
             .UseNpgsql(connectionString)
-            .AddInterceptors(new ZoneConfigChangeInterceptor(
-                sp.GetRequiredService<ZoneConfigChangeSignal>())));
+            .UseDddInterceptors<ZonesDbContext>(sp));
     }
 
     public Task ConfigureAsync(IApplicationBuilder app) {

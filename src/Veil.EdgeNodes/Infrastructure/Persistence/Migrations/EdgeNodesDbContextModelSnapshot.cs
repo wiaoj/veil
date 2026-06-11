@@ -95,6 +95,63 @@ namespace Veil.EdgeNodes.Infrastructure.Persistence.Migrations
                     b.ToTable("edge_nodes", "edge_nodes");
                 });
 
+            modelBuilder.Entity("Wiaoj.Ddd.EntityFrameworkCore.Outbox.OutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("LockExpiration")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LockId")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PartitionKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset?>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ProcessedBy")
+                        .HasColumnType("text");
+
+                    b.Property<int>("RetryCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PartitionKey", "ProcessedAt")
+                        .HasFilter("\"ProcessedAt\" IS NULL");
+
+                    b.HasIndex("ProcessedAt", "OccurredAt");
+
+                    b.HasIndex("ProcessedAt", "LockId", "LockExpiration")
+                        .HasFilter("\"ProcessedAt\" IS NULL");
+
+                    b.ToTable("OutboxMessages", "edge_nodes");
+                });
+
             modelBuilder.Entity("Veil.EdgeNodes.Domain.ConfigPushLog", b =>
                 {
                     b.HasOne("Veil.EdgeNodes.Domain.EdgeNode", null)
