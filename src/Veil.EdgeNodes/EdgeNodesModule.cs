@@ -22,7 +22,7 @@ public sealed class EdgeNodesModule : IWebModule {
                 outbox.InitialDelay = TimeSpan.FromSeconds(5);
                 outbox.PollingInterval = TimeSpan.FromSeconds(5);
             }))
-            .AddTytoIntegration(ServiceLifetime.Singleton, typeof(EdgeNodesModule).Assembly));
+            .AddTytoIntegration<EdgeNodesModule>(ServiceLifetime.Singleton));
 
         services.AddDbContextFactory<EdgeNodesDbContext>((sp, options) => options
             .UseNpgsql(connectionString)

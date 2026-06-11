@@ -1,14 +1,14 @@
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using System.Text;
 using System.Text.Json.Serialization;
 using Tyto;
 using Tyto.DependencyInjection;
 using Veil.Api.ConfigSync;
+using Veil.EdgeNodes;
 using Veil.EdgeNodes.Contracts.IntegrationEvents;
 using Veil.Shared;
+using Veil.Zones;
 using Veil.Zones.Contracts.IntegrationEvents;
-using Wiaoj.Primitives.Obfuscation;
 using Wiaoj.Serialization;
 using Wiaoj.Serialization.SystemTextJson;
 
@@ -27,21 +27,24 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddModulith(builder.Configuration, builder.Environment, modules => {
     modules.AddModule<SharedModule>();
-    modules.AddModule<Veil.Zones.ZoneModule>();
-    modules.AddModule<Veil.EdgeNodes.EdgeNodesModule>();
+    modules.AddModule<ZoneModule>();
+    modules.AddModule<EdgeNodesModule>();
 });
 builder.Services.AddModulithAspNetCore();
 
 // The Wiaoj.Ddd EF integration registers its dispatcher/interceptors scoped
 // (designed for AddDbContext); our contexts come from singleton factories,
-// so the whole chain must resolve from the root provider. Lift the scoped
-// Ddd registrations to singleton — their dependencies are all singletons.
+// so the whole chain must resolve from the root provider. Without this the
+// app fails at startup in Development ("Cannot resolve scoped service ...
+// from root provider"). Goes away once the library registers them
+// factory-compatibly.
 LiftDddRegistrationsToSingleton(builder.Services);
 
 // Tyto event bus — in-memory transport; integration events published by the
 // outbox processor are handled in-process by the ConfigSync handlers.
 builder.Services.TryAddSingleton<ISerializer<TytoJsonSerializerKey>>(
     new SystemTextJsonSerializer<TytoJsonSerializerKey>(new System.Text.Json.JsonSerializerOptions()));
+
 builder.AddTyto(tyto => {
     tyto.MessageDefinitions(define => {
         define.Add<ZoneConfigChanged>("zones.config-changed", 1);

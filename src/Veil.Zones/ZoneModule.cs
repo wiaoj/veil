@@ -30,7 +30,7 @@ public sealed class ZoneModule : IWebModule {
                 outbox.InitialDelay = TimeSpan.FromSeconds(5);
                 outbox.PollingInterval = TimeSpan.FromSeconds(5);
             }))
-            .AddTytoIntegration(ServiceLifetime.Singleton, typeof(ZoneModule).Assembly));
+            .AddTytoIntegration<ZoneModule>(ServiceLifetime.Singleton));
 
         services.AddDbContextFactory<ZonesDbContext>((sp, options) => options
             .UseNpgsql(connectionString)
