@@ -97,7 +97,7 @@
 - [x] Last-known-good snapshot cache (opt-in `VEIL_CONFIG_CACHE`; written on pull/push, read when control plane unreachable at startup)
 - [x] `Arc<RwLock<Config>>` in-memory store (`ConfigStore`)
 - [x] Push receiver (`POST /_veil/internal/config`, constant-time node token check)
-- [ ] HMAC signature verification over push body (with ConfigSync worker, Phase 3.2)
+- [x] HMAC signature verification over push body (`VEIL_PUSH_HMAC_KEY`); push path hardened: credential-header precheck before body read + per-IP rate limit
 - [x] Atomic config swap
 
 ### 2.4 Request pipeline
@@ -124,12 +124,13 @@
 - [x] `X-Veil-Node-Token` authentication (SHA-256 hash compare, marks node seen)
 
 ### 3.2 Veil.ConfigSync worker
-- [ ] In-process event bus — subscribe to `ZoneConfigChangedEvent`
-- [ ] Zone config snapshot serialisation
-- [ ] HTTP POST to each registered edge node
-- [ ] Push result recorded in `config_push_log`
+> Hosted in Veil.Api for now (the change signal is in-process). Moves to the standalone worker once an outbox + Redis queue exist.
+- [x] In-process change signal — `SaveChangesInterceptor` on `ZonesDbContext` + coalescing capacity-1 channel (replaces per-event plumbing)
+- [x] Zone config snapshot serialisation (shared with 3.1)
+- [x] HTTP POST to each registered edge node, HMAC-SHA256 signed body (`ConfigSync:PushHmacKey`); per-node snapshot-hash dedupe; 5-min reconcile pass
+- [x] Push result recorded in `config_push_log`
 - [ ] Redis retry queue (sorted set, next-attempt score)
-- [ ] Exponential backoff, 3 retries, dead-letter after exhaustion
+- [x] Exponential backoff, 3 retries per cycle (dead-letter comes with the Redis queue)
 - [ ] Redis leader election lock (single active instance in K8s)
 
 ---

@@ -333,6 +333,7 @@ async fn config_push_updates_last_known_good_cache() {
         config,
         Some(NODE_TOKEN.to_owned()),
         Some(cache_path.clone()),
+        None,
     );
     tokio::spawn(proxy::serve(listener, Arc::new(state)));
 
@@ -348,6 +349,86 @@ async fn config_push_updates_last_known_good_cache() {
     assert_eq!(cached.zones[0].name, "pushed");
 
     std::fs::remove_file(&cache_path).ok();
+}
+
+// ── HMAC-signed pushes (ConfigSync worker path) ──────────────────────
+
+const PUSH_KEY: [u8; 32] = [0x11; 32];
+
+fn sign_body(body: &str) -> String {
+    use hmac::{Hmac, Mac};
+    let mut mac = <Hmac<sha2::Sha256> as Mac>::new_from_slice(&PUSH_KEY).unwrap();
+    mac.update(body.as_bytes());
+    veil_edge::challenge::pow::to_hex(&mac.finalize().into_bytes())
+}
+
+async fn spawn_proxy_with_push_key(upstream: SocketAddr) -> SocketAddr {
+    let config = Config::from_json(&format!(
+        r#"{{"zones": [{{"name": "test", "hosts": ["*"],
+            "upstream": "http://{upstream}", "rules": []}}]}}"#
+    ))
+    .unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    // No node token: signature is the only accepted credential.
+    let state = AppState::with_options(config, None, None, Some(PUSH_KEY));
+    tokio::spawn(proxy::serve(listener, Arc::new(state)));
+    addr
+}
+
+async fn push_signed(proxy: SocketAddr, signature: &str, body: &str) -> Response<Incoming> {
+    let req = Request::builder()
+        .method(hyper::Method::POST)
+        .uri(format!("http://{proxy}/_veil/internal/config"))
+        .header(hyper::header::CONTENT_TYPE, "application/json")
+        .header("x-veil-signature", signature)
+        .body(Full::new(Bytes::from(body.to_owned())))
+        .unwrap();
+    let post_client: Client<hyper_util::client::legacy::connect::HttpConnector, Full<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    post_client.request(req).await.unwrap()
+}
+
+#[tokio::test]
+async fn config_push_accepts_valid_hmac_signature() {
+    let upstream = spawn_upstream().await;
+    let proxy = spawn_proxy_with_push_key(upstream).await;
+    let client = client();
+
+    let new_config = format!(
+        r#"{{"zones": [{{"name": "test", "hosts": ["*"],
+            "upstream": "http://{upstream}",
+            "rules": [{{"id": "b", "priority": 1, "action": "block",
+                        "conditions": [{{"type": "path_prefix", "value": "/signed"}}]}}]}}]}}"#
+    );
+
+    let response = push_signed(proxy, &sign_body(&new_config), &new_config).await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = get(&client, proxy, "/signed").await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn config_push_rejects_invalid_hmac_signature() {
+    let upstream = spawn_upstream().await;
+    let proxy = spawn_proxy_with_push_key(upstream).await;
+    let client = client();
+
+    let new_config = format!(
+        r#"{{"zones": [{{"name": "test", "hosts": ["*"],
+            "upstream": "http://{upstream}",
+            "rules": [{{"id": "b", "priority": 1, "action": "block", "conditions": []}}]}}]}}"#
+    );
+
+    // Signature over different bytes than the body that arrives.
+    let response = push_signed(proxy, &sign_body("something-else"), &new_config).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    // Old (empty) rule set still serving.
+    let response = get(&client, proxy, "/anything").await;
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]

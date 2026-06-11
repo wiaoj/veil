@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Veil.Zones.Infrastructure.Persistence;
+using Veil.Zones.Sync;
 using Wiaoj.Modulith;
 
 namespace Veil.Zones;
@@ -17,7 +18,11 @@ public sealed class ZoneModule : IWebModule {
         // own connection string only if it is ever extracted into a service.
         string? connectionString = configuration.GetConnectionString("Default");
 
-        services.AddDbContextFactory<ZonesDbContext>(options => options.UseNpgsql(connectionString));
+        services.AddSingleton<ZoneConfigChangeSignal>();
+        services.AddDbContextFactory<ZonesDbContext>((sp, options) => options
+            .UseNpgsql(connectionString)
+            .AddInterceptors(new ZoneConfigChangeInterceptor(
+                sp.GetRequiredService<ZoneConfigChangeSignal>())));
     }
 
     public Task ConfigureAsync(IApplicationBuilder app) {

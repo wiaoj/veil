@@ -24,6 +24,11 @@ builder.Services.AddModulith(builder.Configuration, builder.Environment, modules
 });
 builder.Services.AddModulithAspNetCore();
 
+// Config sync: pushes signed zone snapshots to edge nodes on change.
+builder.Services.AddHttpClient(Veil.Api.ConfigSync.ConfigSyncService.HttpClientName,
+    client => client.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHostedService<Veil.Api.ConfigSync.ConfigSyncService>();
+
 
 var app = builder.Build();
 

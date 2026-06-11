@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
+use hmac::{Hmac, Mac};
 use http_body_util::BodyExt;
 use hyper::body::Incoming;
 use hyper::service::service_fn;
@@ -14,6 +15,7 @@ use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto;
+use sha2::Sha256;
 use tokio::net::TcpListener;
 use tracing::{debug, info, warn};
 
@@ -30,8 +32,19 @@ use crate::response::{forbidden, json_response, rate_limited, text, ProxyBody};
 /// Reserved path where the control plane pushes config updates at runtime.
 pub const CONFIG_PUSH_PATH: &str = "/_veil/internal/config";
 
+/// Default header carrying the HMAC-SHA256 signature of the push body.
+/// Overridable via `VEIL_PUSH_SIGNATURE_HEADER` (must match the control
+/// plane's `ConfigSync:SignatureHeader`).
+pub const DEFAULT_SIGNATURE_HEADER: &str = "x-veil-signature";
+
 /// Config push payloads larger than this are rejected.
 const CONFIG_PUSH_MAX_BYTES: usize = 1024 * 1024;
+
+/// Per-IP budget for the push endpoint: it is reachable on the public
+/// listener, so unauthenticated callers must not be able to make the node
+/// buffer large bodies at line rate.
+const CONFIG_PUSH_RATE_LIMIT: u32 = 10;
+const CONFIG_PUSH_RATE_WINDOW_SECS: u64 = 60;
 
 pub struct AppState {
     pub config: ConfigStore,
@@ -41,6 +54,11 @@ pub struct AppState {
     /// Shared secret authenticating control-plane pushes. `None` disables
     /// the push receiver entirely (local-file mode).
     pub node_token: Option<String>,
+    /// Shared HMAC key (`VEIL_PUSH_HMAC_KEY`) verifying signed config
+    /// pushes from the ConfigSync worker.
+    pub push_hmac_key: Option<[u8; 32]>,
+    /// Header carrying the push body signature.
+    pub signature_header: String,
     /// Last-known-good snapshot location (`VEIL_CONFIG_CACHE`). `None`
     /// disables cache writes.
     pub config_cache_path: Option<PathBuf>,
@@ -52,17 +70,19 @@ impl AppState {
             config,
             std::env::var("VEIL_NODE_TOKEN").ok(),
             cache::path_from_env(),
+            push_key_from_env(),
         )
     }
 
     pub fn with_node_token(config: Config, node_token: Option<String>) -> Self {
-        Self::with_options(config, node_token, None)
+        Self::with_options(config, node_token, None, None)
     }
 
     pub fn with_options(
         config: Config,
         node_token: Option<String>,
         config_cache_path: Option<PathBuf>,
+        push_hmac_key: Option<[u8; 32]>,
     ) -> Self {
         let cookie_name =
             std::env::var("VEIL_CHALLENGE_COOKIE").unwrap_or_else(|_| "veil_pass".to_owned());
@@ -71,13 +91,32 @@ impl AppState {
             .parse::<u32>()
             .unwrap_or(600);
 
+        let signature_header = std::env::var("VEIL_PUSH_SIGNATURE_HEADER")
+            .map(|h| h.to_ascii_lowercase())
+            .unwrap_or_else(|_| DEFAULT_SIGNATURE_HEADER.to_owned());
+
         Self {
             config: ConfigStore::new(config),
             limiter: RateLimiter::new(),
             client: Client::builder(TokioExecutor::new()).build_http(),
             challenge: ChallengeEngine::new(cookie_name, cookie_ttl),
             node_token,
+            push_hmac_key,
+            signature_header,
             config_cache_path,
+        }
+    }
+}
+
+/// Parses `VEIL_PUSH_HMAC_KEY` (64 hex chars). An invalid value disables
+/// signature verification with a warning rather than silently truncating.
+fn push_key_from_env() -> Option<[u8; 32]> {
+    let hex = std::env::var("VEIL_PUSH_HMAC_KEY").ok()?;
+    match crate::challenge::pow::from_hex(&hex).and_then(|b| <[u8; 32]>::try_from(b).ok()) {
+        Some(key) => Some(key),
+        None => {
+            warn!("VEIL_PUSH_HMAC_KEY must be 64 hex chars; push signature verification disabled");
+            None
         }
     }
 }
@@ -223,32 +262,61 @@ async fn handle_challenge_verify(
     state.challenge.verify_solution(&solution, ctx.client_ip)
 }
 
-/// Handle `POST /_veil/internal/config` — authenticate the control plane via
-/// the shared node token and atomically swap in the pushed config snapshot.
+/// Handle `POST /_veil/internal/config` — authenticate the pusher (node
+/// token for operators, HMAC body signature for the ConfigSync worker) and
+/// atomically swap in the pushed config snapshot.
+///
+/// The path is reachable on the public listener, so everything before the
+/// body read must be cheap: requests without a credential header are
+/// rejected immediately and a per-IP budget caps how often anyone can make
+/// this node buffer a payload.
 async fn handle_config_push(
     req: Request<Incoming>,
     ctx: &crate::pipeline::RequestContext,
     state: &AppState,
 ) -> Response<ProxyBody> {
-    let Some(expected_token) = state.node_token.as_deref() else {
+    if state.node_token.is_none() && state.push_hmac_key.is_none() {
         return json_response(
             StatusCode::FORBIDDEN,
-            r#"{"error":"push_disabled","detail":"Node runs from a local config file; no node token configured."}"#,
+            r#"{"error":"push_disabled","detail":"Node runs from a local config file; no push credentials configured."}"#,
         );
-    };
+    }
 
-    let provided = req
+    let provided_token = req
         .headers()
         .get(NODE_TOKEN_HEADER)
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if !constant_time_eq(provided.as_bytes(), expected_token.as_bytes()) {
-        warn!(client_ip = %ctx.client_ip, "config push with invalid node token rejected");
+        .map(str::to_owned);
+    let provided_signature = req
+        .headers()
+        .get(state.signature_header.as_str())
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+
+    if provided_token.is_none() && provided_signature.is_none() {
+        warn!(client_ip = %ctx.client_ip, "config push without credentials rejected");
         return json_response(
             StatusCode::UNAUTHORIZED,
-            r#"{"error":"invalid_token","detail":"Node token missing or invalid."}"#,
+            r#"{"error":"missing_credentials","detail":"Node token or push signature required."}"#,
         );
     }
+
+    let rate_key = format!("_veil:config_push:{}", ctx.client_ip);
+    if !state
+        .limiter
+        .allow(&rate_key, CONFIG_PUSH_RATE_LIMIT, CONFIG_PUSH_RATE_WINDOW_SECS)
+    {
+        warn!(client_ip = %ctx.client_ip, "config push rate limit exceeded");
+        return crate::response::rate_limited(CONFIG_PUSH_RATE_WINDOW_SECS, false);
+    }
+
+    // Token check is cheap and body-independent; do it before the read so a
+    // valid operator token never depends on signature material.
+    let token_ok = matches!(
+        (&state.node_token, &provided_token),
+        (Some(expected), Some(provided))
+            if constant_time_eq(provided.as_bytes(), expected.as_bytes())
+    );
 
     let body_bytes = match req.collect().await {
         Ok(collected) => collected.to_bytes(),
@@ -264,6 +332,19 @@ async fn handle_config_push(
         return json_response(
             StatusCode::PAYLOAD_TOO_LARGE,
             r#"{"error":"body_too_large","detail":"Config payload exceeds 1 MiB."}"#,
+        );
+    }
+
+    let signature_ok = matches!(
+        (&state.push_hmac_key, &provided_signature),
+        (Some(key), Some(signature)) if verify_push_signature(key, &body_bytes, signature)
+    );
+
+    if !token_ok && !signature_ok {
+        warn!(client_ip = %ctx.client_ip, "config push with invalid credentials rejected");
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            r#"{"error":"invalid_credentials","detail":"Node token or push signature invalid."}"#,
         );
     }
 
@@ -295,6 +376,17 @@ async fn handle_config_push(
             )
         }
     }
+}
+
+/// HMAC-SHA256 over the raw push body with the shared push key.
+fn verify_push_signature(key: &[u8; 32], body: &[u8], signature_hex: &str) -> bool {
+    let Some(signature) = crate::challenge::pow::from_hex(signature_hex) else {
+        return false;
+    };
+    let mut mac =
+        <Hmac<Sha256> as Mac>::new_from_slice(key).expect("hmac accepts any key length");
+    mac.update(body);
+    mac.verify_slice(&signature).is_ok()
 }
 
 /// Constant-time byte comparison for the node token; avoids leaking the
