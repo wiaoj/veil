@@ -8,7 +8,7 @@
 - [x] Solution structure: `Veil.sln`, module projects, `Apps/` projects
 - [x] `docker-compose.yml` — PostgreSQL, Redis (3 instances: rate-limit, tokens, config), ClickHouse
 - [ ] `.env.example` with all required variables (edge done, control plane pending)
-- [ ] CI pipeline (GitHub Actions) — build, test, lint on PR
+- [x] CI pipeline (GitHub Actions) — edge cargo test (+clippy advisory), full .NET solution build (checks out wiaoj/libraries sibling), dashboard bun build
 
 ### 1.2 Veil.Shared
 - [ ] `PagedList<T>` 
