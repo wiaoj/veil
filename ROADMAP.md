@@ -217,7 +217,7 @@
 - [x] JWT auth flow against `Veil.Api` — login, localStorage tokens, refresh-and-retry on 401, dev Vite proxy (`/v1` → :5210, no CORS)
 
 ### 7.2 Zones & Rules
-- [ ] Zone list, zone detail (list done; detail pending)
+- [x] Zone list, zone detail (upstream/challenge cards, pause/resume, rule enable/disable/delete)
 - [ ] Rule builder — condition composer, action picker, priority drag-and-drop
 - [ ] Create / edit / delete flows
 

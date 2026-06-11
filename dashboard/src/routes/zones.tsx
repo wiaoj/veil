@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import type { ListZonesResponse } from '#/lib/api'
 import { useApiData } from '#/lib/useApiData'
 
@@ -47,7 +47,11 @@ function ZonesPage() {
           <tbody>
             {items.map((zone) => (
               <tr key={zone.id} className="border-b border-gray-100 dark:border-gray-900">
-                <td className="py-2 font-medium">{zone.hostname}</td>
+                <td className="py-2 font-medium">
+                  <Link to="/zones/$zoneId" params={{ zoneId: zone.id }} className="hover:underline">
+                    {zone.hostname}
+                  </Link>
+                </td>
                 <td>
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs ${STATUS_TONE[zone.status] ?? 'bg-gray-100 text-gray-600'}`}

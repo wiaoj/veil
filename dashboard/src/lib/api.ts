@@ -80,6 +80,35 @@ export async function apiGet<T>(path: string): Promise<T> {
   throw new UnauthorizedError()
 }
 
+/** Authenticated mutation with the same refresh-and-retry semantics. */
+export async function apiSend<T = unknown>(
+  path: string,
+  method: 'POST' | 'PUT' | 'DELETE',
+  body?: unknown,
+): Promise<T | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const access = window.localStorage.getItem(ACCESS_KEY)
+    const response = await fetch(path, {
+      method,
+      headers: {
+        ...(access ? { Authorization: `Bearer ${access}` } : {}),
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+    if (response.status === 401) {
+      if (attempt === 0 && (await tryRefresh())) continue
+      clearSession()
+      throw new UnauthorizedError()
+    }
+    if (!response.ok) throw new Error(`API ${response.status}: ${path}`)
+    if (response.status === 204) return null
+    const text = await response.text()
+    return text.length > 0 ? (JSON.parse(text) as T) : null
+  }
+  throw new UnauthorizedError()
+}
+
 // ── Response shapes (mirror the control plane contracts) ─────────────
 
 export interface ZoneSummary {
@@ -94,6 +123,44 @@ export interface ListZonesResponse {
   page: number
   pageSize: number
   totalCount: number
+}
+
+export interface RuleCondition {
+  type: string
+  value?: string | null
+  name?: string | null
+  asn?: number | null
+  mode?: string | null
+}
+
+export interface Rule {
+  id: string
+  name: string
+  priority: number
+  action: string
+  isEnabled: boolean
+  conditions: Array<RuleCondition>
+  rateLimit: { requests: number; windowSecs: number } | null
+}
+
+export interface ZoneDetail {
+  id: string
+  hostname: string
+  status: string
+  upstream: {
+    targets: Array<{ url: string; weight: number }>
+    strategy: string
+    connectTimeoutMs: number
+    responseTimeoutMs: number
+    passHostHeader: boolean
+  }
+  challenge: {
+    enabled: boolean
+    difficulty: number
+    expirationSeconds: number
+    requireCaptcha: boolean
+  }
+  rules: Array<Rule>
 }
 
 export interface VolumePoint {
