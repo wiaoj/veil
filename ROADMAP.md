@@ -211,19 +211,19 @@
 ## Phase 7 — Dashboard (React)
 
 ### 7.1 Scaffold
-- [ ] Vite + React + TypeScript
-- [ ] TanStack Router, TanStack Query, TanStack Form + Zod
+- [x] Vite + React + TypeScript (TanStack Start, Tailwind 4, bun)
+- [x] TanStack Router (Query, Form + Zod pending — plain fetch hook for now)
 - [ ] shadcn/ui setup
-- [ ] JWT auth flow against `Veil.Api`
+- [x] JWT auth flow against `Veil.Api` — login, localStorage tokens, refresh-and-retry on 401, dev Vite proxy (`/v1` → :5210, no CORS)
 
 ### 7.2 Zones & Rules
-- [ ] Zone list, zone detail
+- [ ] Zone list, zone detail (list done; detail pending)
 - [ ] Rule builder — condition composer, action picker, priority drag-and-drop
 - [ ] Create / edit / delete flows
 
 ### 7.3 Analytics
-- [ ] Request volume chart (time series)
-- [ ] Top IPs, verdict breakdown, challenge stats
+- [x] Request volume chart (time series — CSS bars on the overview; chart lib later)
+- [ ] Top IPs, verdict breakdown, challenge stats (top IPs done; verdict/challenge widgets pending)
 
 ### 7.4 Edge node management
 - [ ] Node list with per-node sync status
