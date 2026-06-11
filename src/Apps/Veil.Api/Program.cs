@@ -30,6 +30,8 @@ builder.Services.AddModulith(builder.Configuration, builder.Environment, modules
     modules.AddModule<Veil.Auth.AuthModule>();
     modules.AddModule<ZoneModule>();
     modules.AddModule<EdgeNodesModule>();
+    // Read side only — ingestion (AnalyticsModule) runs in the worker.
+    modules.AddModule<Veil.Analytics.AnalyticsQueryModule>();
 });
 builder.Services.AddModulithAspNetCore();
 

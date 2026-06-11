@@ -195,14 +195,16 @@
 - [ ] Nightly aggregation → daily summary into PostgreSQL
 
 ### 6.2 Veil.Analytics — Query model & Application
-- [ ] `AnalyticsDbContext` — ClickHouse read model
-- [ ] `GetAnalyticsSummaryQuery` + handler
-- [ ] `GetTopIpsQuery` + handler
-- [ ] `GetVerdictsBreakdownQuery` + handler
-- [ ] `GetChallengeStatsQuery` + handler
+> No EF read model — `ClickHouseReader` queries the HTTP interface directly
+> (JSONEachRow, server-side parameter binding), same approach as the writer.
+- [x] `ClickHouseReader` — parameterised SELECTs over the HTTP interface
+- [x] `GetAnalyticsSummary` (totals + volume time series, auto bucket width)
+- [x] `GetTopIps`
+- [x] `GetVerdictBreakdown`
+- [x] `GetChallengeStats` (issue/pass funnel + pass rate)
 
 ### 6.3 Veil.Api — Analytics endpoints
-- [ ] Analytics endpoint group — wire all queries
+- [x] Analytics endpoint group — `AnalyticsQueryModule` (read side) hosted in Veil.Api; ingestion stays in the worker
 
 ---
 
