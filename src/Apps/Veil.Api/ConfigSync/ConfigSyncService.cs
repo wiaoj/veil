@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using System.Text;
 using System.Text.Json;
 using Veil.EdgeNodes.Domain;
@@ -6,11 +7,11 @@ using Veil.EdgeNodes.Domain.Enums;
 using Veil.EdgeNodes.Infrastructure.Persistence;
 using Veil.Shared;
 using Veil.Zones.Domain;
+using Veil.Zones.Domain.ValueObjects;
 using Veil.Zones.EdgeConfig;
 using Veil.Zones.Infrastructure.Persistence;
 using Veil.Zones.Sync;
-using Wiaoj.Primitives.Cryptography.Hashing;
-using RuleId = Veil.Zones.Domain.ValueObjects.RuleId;
+using Wiaoj.Primitives.Cryptography.Hashing; 
 
 namespace Veil.Api.ConfigSync;
 
@@ -34,19 +35,14 @@ public sealed class ConfigSyncService(
     IObfuscator<RuleId> ruleObfuscator,
     IHttpClientFactory httpClientFactory,
     TimeProvider timeProvider,
-    IConfiguration configuration,
+    IOptions<ConfigSyncOptions> options,
     ILogger<ConfigSyncService> logger) : BackgroundService {
 
     public const string HttpClientName = "edge-push";
-    public const string DefaultSignatureHeader = "X-Veil-Signature";
-    public const string DefaultPushPath = "/_veil/internal/config";
 
     // Configurable so a deployment can rename the header / move the reserved
     // path; must match the edge's VEIL_PUSH_SIGNATURE_HEADER and push path.
-    private readonly string _signatureHeader =
-        configuration["ConfigSync:SignatureHeader"] ?? DefaultSignatureHeader;
-    private readonly string _pushPath =
-        configuration["ConfigSync:PushPath"] ?? DefaultPushPath;
+    private readonly ConfigSyncOptions _options = options.Value;
 
     private static readonly TimeSpan DebounceWindow = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan ReconcileInterval = TimeSpan.FromMinutes(5);
@@ -153,7 +149,7 @@ public sealed class ConfigSyncService(
         string json,
         string signature,
         CancellationToken cancellationToken) {
-        string url = node.Address.ToString().TrimEnd('/') + this._pushPath;
+        string url = node.Address.ToString().TrimEnd('/') + this._options.PushPath;
         HttpClient client = httpClientFactory.CreateClient(HttpClientName);
         string? lastError = null;
 
@@ -162,7 +158,7 @@ public sealed class ConfigSyncService(
                 using HttpRequestMessage request = new(HttpMethod.Post, url) {
                     Content = new StringContent(json, Encoding.UTF8, "application/json"),
                 };
-                request.Headers.TryAddWithoutValidation(this._signatureHeader, signature);
+                request.Headers.TryAddWithoutValidation(this._options.SignatureHeader, signature);
 
                 using HttpResponseMessage response = await client.SendAsync(request, cancellationToken);
                 if(response.IsSuccessStatusCode)
@@ -185,7 +181,7 @@ public sealed class ConfigSyncService(
     }
 
     private byte[]? ReadPushKey() {
-        string? hex = configuration["ConfigSync:PushHmacKey"];
+        string? hex = this._options.PushHmacKey;
         if(string.IsNullOrWhiteSpace(hex)) return null;
         try {
             byte[] key = Convert.FromHexString(hex);

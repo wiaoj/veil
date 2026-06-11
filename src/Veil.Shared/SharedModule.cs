@@ -1,23 +1,23 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using System.Text;
 using Veil.Shared.Obfuscation;
 using Wiaoj.Modulith;
 using Wiaoj.Primitives.Obfuscation;
 
-namespace Veil.Shared; 
+namespace Veil.Shared;
 public sealed class SharedModule : IModule {
     public string Name => nameof(SharedModule);
 
     public void Register(IServiceCollection services, IConfiguration configuration) {
         services.TryAddSingleton(TimeProvider.System);
 
-        string obfuscationSeed = configuration["Obfuscation:Seed"]
-            ?? "vaultex-iam-server-dev-obfuscation-seed";
-        services.AddSingleton<IObfuscator>(_ => new FeistelBase62Obfuscator(
+        services.Configure<ObfuscationOptions>(configuration.GetSection(ObfuscationOptions.SectionName));
+        services.AddSingleton<IObfuscator>(sp => new FeistelBase62Obfuscator(
             new FeistelObfuscatorOptions {
-                Seed = Encoding.UTF8.GetBytes(obfuscationSeed),
+                Seed = Encoding.UTF8.GetBytes(sp.GetRequiredService<IOptions<ObfuscationOptions>>().Value.Seed),
             }));
 
 #if DEBUG
