@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Veil.Analytics\Veil.Analytics.csproj" />
     <ProjectReference Include="..\..\Veil.Auth\Veil.Auth.csproj" />
+    <ProjectReference Include="..\..\Veil.Certificates\Veil.Certificates.csproj" />
     <ProjectReference Include="..\..\Veil.EdgeNodes\Veil.EdgeNodes.csproj" />
     <ProjectReference Include="..\..\Veil.Zones\Veil.Zones.csproj" />
   </ItemGroup>

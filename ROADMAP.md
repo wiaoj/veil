@@ -163,14 +163,15 @@
 ## Phase 5 — Certificate Lifecycle
 
 ### 5.1 Veil.Certificates — Domain & Persistence
-- [ ] `Certificate` entity, `CertificateId`, `CertificateStatus`
-- [ ] `CertificatesDbContext` with own schema (`certificates`)
-- [ ] EF Core configuration + migration
+- [x] `Certificate` entity, `CertificateId` (`crt` prefix), `CertificateStatus`, `CertificateIssued` domain event
+- [x] `CertificatesDbContext` with own schema (`certificates`) + outbox
+- [x] EF Core configuration + migration
 
 ### 5.2 Veil.Certificates — Application
-- [ ] `ProvisionCertificateCommand` + handler
-- [ ] `RenewCertificateCommand` + handler
-- [ ] `GetCertificateQuery` + handler
+> Endpoint slices, same pattern as Zones (no separate command/handler layer).
+- [x] `RequestCertificate` (`POST /v1/certificates` — creates a Pending order; ACME worker provisions)
+- [x] `GetCertificate` / `ListCertificates`
+- [ ] Renewal trigger (comes with 5.4 background service)
 
 ### 5.3 ACME provisioning
 - [ ] Certes ACME v2 client
