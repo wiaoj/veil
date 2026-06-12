@@ -10,7 +10,8 @@ using Wiaoj.Endpoints;
 namespace Veil.EdgeNodes.Features.EdgeNodes.ListEdgeNodes;
 
 /// <summary>
-/// Edge node summary. The token hash is never exposed.
+/// Edge node summary. The token hash is never exposed. Last push fields are
+/// null until the ConfigSync worker records its first attempt for the node.
 /// </summary>
 public sealed record EdgeNodeSummaryResponse(
     string Id,
@@ -18,7 +19,9 @@ public sealed record EdgeNodeSummaryResponse(
     string Address,
     string Status,
     DateTimeOffset RegisteredAtUtc,
-    DateTimeOffset? LastSeenAtUtc);
+    DateTimeOffset? LastSeenAtUtc,
+    bool? LastPushSucceeded,
+    DateTimeOffset? LastPushAtUtc);
 
 /// <summary>
 /// Paginated edge node list.
@@ -67,7 +70,12 @@ public sealed class ListEdgeNodesEndpoint : IEndpoint {
                 n.Address,
                 n.Status,
                 n.RegisteredAtUtc,
-                n.LastSeenAtUtc
+                n.LastSeenAtUtc,
+                LastPush = dbContext.ConfigPushLogs
+                    .Where(l => l.EdgeNodeId.Equals(n.Id))
+                    .OrderByDescending(l => l.PushedAtUtc)
+                    .Select(l => new { l.Succeeded, l.PushedAtUtc })
+                    .FirstOrDefault()
             })
             .ToListAsync(cancellationToken);
 
@@ -78,7 +86,9 @@ public sealed class ListEdgeNodesEndpoint : IEndpoint {
                 n.Address.ToString(),
                 n.Status.ToString(),
                 n.RegisteredAtUtc,
-                n.LastSeenAtUtc))
+                n.LastSeenAtUtc,
+                n.LastPush?.Succeeded,
+                n.LastPush?.PushedAtUtc))
             .ToList();
 
         return Results.Ok(new ListEdgeNodesResponse(items, page, pageSize, totalCount));

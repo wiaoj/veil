@@ -197,3 +197,35 @@ export interface TopIpsResponse {
   windowHours: number
   items: Array<TopIpEntry>
 }
+
+export interface EdgeNodeSummary {
+  id: string
+  name: string
+  address: string
+  status: string
+  registeredAtUtc: string
+  lastSeenAtUtc: string | null
+  lastPushSucceeded: boolean | null
+  lastPushAtUtc: string | null
+}
+
+export interface ListEdgeNodesResponse {
+  items: Array<EdgeNodeSummary>
+  page: number
+  pageSize: number
+  totalCount: number
+}
+
+export interface ConfigPushLogEntry {
+  succeeded: boolean
+  error: string | null
+  pushedAtUtc: string
+}
+
+export interface ConfigPushLogResponse {
+  nodeId: string
+  items: Array<ConfigPushLogEntry>
+  page: number
+  pageSize: number
+  totalCount: number
+}

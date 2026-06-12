@@ -10,15 +10,22 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ZonesRouteImport } from './routes/zones'
+import { Route as NodesRouteImport } from './routes/nodes'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ZonesNewRouteImport } from './routes/zones.new'
 import { Route as ZonesZoneIdRouteImport } from './routes/zones.$zoneId'
+import { Route as NodesNodeIdRouteImport } from './routes/nodes.$nodeId'
 
 const ZonesRoute = ZonesRouteImport.update({
   id: '/zones',
   path: '/zones',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NodesRoute = NodesRouteImport.update({
+  id: '/nodes',
+  path: '/nodes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -46,12 +53,19 @@ const ZonesZoneIdRoute = ZonesZoneIdRouteImport.update({
   path: '/$zoneId',
   getParentRoute: () => ZonesRoute,
 } as any)
+const NodesNodeIdRoute = NodesNodeIdRouteImport.update({
+  id: '/$nodeId',
+  path: '/$nodeId',
+  getParentRoute: () => NodesRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/login': typeof LoginRoute
+  '/nodes': typeof NodesRouteWithChildren
   '/zones': typeof ZonesRouteWithChildren
+  '/nodes/$nodeId': typeof NodesNodeIdRoute
   '/zones/$zoneId': typeof ZonesZoneIdRoute
   '/zones/new': typeof ZonesNewRoute
 }
@@ -59,7 +73,9 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/login': typeof LoginRoute
+  '/nodes': typeof NodesRouteWithChildren
   '/zones': typeof ZonesRouteWithChildren
+  '/nodes/$nodeId': typeof NodesNodeIdRoute
   '/zones/$zoneId': typeof ZonesZoneIdRoute
   '/zones/new': typeof ZonesNewRoute
 }
@@ -68,7 +84,9 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/login': typeof LoginRoute
+  '/nodes': typeof NodesRouteWithChildren
   '/zones': typeof ZonesRouteWithChildren
+  '/nodes/$nodeId': typeof NodesNodeIdRoute
   '/zones/$zoneId': typeof ZonesZoneIdRoute
   '/zones/new': typeof ZonesNewRoute
 }
@@ -78,17 +96,29 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/login'
+    | '/nodes'
     | '/zones'
+    | '/nodes/$nodeId'
     | '/zones/$zoneId'
     | '/zones/new'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/login' | '/zones' | '/zones/$zoneId' | '/zones/new'
+  to:
+    | '/'
+    | '/about'
+    | '/login'
+    | '/nodes'
+    | '/zones'
+    | '/nodes/$nodeId'
+    | '/zones/$zoneId'
+    | '/zones/new'
   id:
     | '__root__'
     | '/'
     | '/about'
     | '/login'
+    | '/nodes'
     | '/zones'
+    | '/nodes/$nodeId'
     | '/zones/$zoneId'
     | '/zones/new'
   fileRoutesById: FileRoutesById
@@ -97,6 +127,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   LoginRoute: typeof LoginRoute
+  NodesRoute: typeof NodesRouteWithChildren
   ZonesRoute: typeof ZonesRouteWithChildren
 }
 
@@ -107,6 +138,13 @@ declare module '@tanstack/react-router' {
       path: '/zones'
       fullPath: '/zones'
       preLoaderRoute: typeof ZonesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/nodes': {
+      id: '/nodes'
+      path: '/nodes'
+      fullPath: '/nodes'
+      preLoaderRoute: typeof NodesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -144,8 +182,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZonesZoneIdRouteImport
       parentRoute: typeof ZonesRoute
     }
+    '/nodes/$nodeId': {
+      id: '/nodes/$nodeId'
+      path: '/$nodeId'
+      fullPath: '/nodes/$nodeId'
+      preLoaderRoute: typeof NodesNodeIdRouteImport
+      parentRoute: typeof NodesRoute
+    }
   }
 }
+
+interface NodesRouteChildren {
+  NodesNodeIdRoute: typeof NodesNodeIdRoute
+}
+
+const NodesRouteChildren: NodesRouteChildren = {
+  NodesNodeIdRoute: NodesNodeIdRoute,
+}
+
+const NodesRouteWithChildren = NodesRoute._addFileChildren(NodesRouteChildren)
 
 interface ZonesRouteChildren {
   ZonesZoneIdRoute: typeof ZonesZoneIdRoute
@@ -163,6 +218,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   LoginRoute: LoginRoute,
+  NodesRoute: NodesRouteWithChildren,
   ZonesRoute: ZonesRouteWithChildren,
 }
 export const routeTree = rootRouteImport

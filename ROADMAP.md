@@ -226,8 +226,8 @@
 - [ ] Top IPs, verdict breakdown, challenge stats (top IPs done; verdict/challenge widgets pending)
 
 ### 7.4 Edge node management
-- [ ] Node list with per-node sync status
-- [ ] Config push log viewer
+- [x] Node list with per-node sync status (last push result surfaced on `GET /v1/edge-nodes`)
+- [x] Config push log viewer (`GET /v1/edge-nodes/{id}/push-log`, paginated)
 
 ### 7.5 Real-time traffic view
 - [ ] WebSocket connection
