@@ -27,6 +27,8 @@ public sealed class CertificatesModule : IWebModule {
         services.AddDbContextFactory<CertificatesDbContext>((sp, options) => options
             .UseNpgsql(connectionString)
             .UseDddInterceptors<CertificatesDbContext>(sp));
+
+        services.Configure<CertificatesOptions>(configuration.GetSection(CertificatesOptions.SectionName));
     }
 
     public Task ConfigureAsync(IApplicationBuilder app) {

@@ -19,6 +19,7 @@ use sha2::Sha256;
 use tokio::net::TcpListener;
 use tracing::{debug, info, warn};
 
+use crate::acme::{AcmeStore, ChallengeSet, ACME_PUSH_PATH, HTTP01_PATH_PREFIX};
 use crate::analytics::{self, LogBuffer, LogRecord};
 use crate::challenge::{ChallengeEngine, VerifySolutionRequest, CHALLENGE_VERIFY_PATH};
 use crate::config::cache;
@@ -66,6 +67,8 @@ pub struct AppState {
     /// Request log buffer drained by the analytics shipper. `None` disables
     /// emission entirely (no `VEIL_ANALYTICS_URL`).
     pub analytics: Option<Arc<LogBuffer>>,
+    /// Active ACME HTTP-01 challenges published by the control plane.
+    pub acme: AcmeStore,
 }
 
 impl AppState {
@@ -111,6 +114,7 @@ impl AppState {
             signature_header,
             config_cache_path,
             analytics: None,
+            acme: AcmeStore::new(),
         }
     }
 }
@@ -204,6 +208,22 @@ pub async fn handle(
     // ── Reserved path: control-plane config push ──────────────────────
     if ctx.path == CONFIG_PUSH_PATH && req.method() == Method::POST {
         return handle_config_push(req, &ctx, &state).await;
+    }
+
+    // ── Reserved path: control-plane ACME challenge publish ───────────
+    if ctx.path == ACME_PUSH_PATH && req.method() == Method::POST {
+        return handle_acme_push(req, &ctx, &state).await;
+    }
+
+    // ── ACME HTTP-01 validation — answered before any zone/rule logic so
+    // a block or challenge rule can never break certificate issuance.
+    if req.method() == Method::GET {
+        if let Some(token) = ctx.path.strip_prefix(HTTP01_PATH_PREFIX) {
+            return match state.acme.key_authorization(token) {
+                Some(key_auth) => text(StatusCode::OK, &key_auth),
+                None => text(StatusCode::NOT_FOUND, "404 unknown acme token\n"),
+            };
+        }
     }
 
     let Some(zone) = config.resolve_zone(&ctx.host) else {
@@ -459,6 +479,99 @@ async fn handle_config_push(
                 &format!(r#"{{"error":"invalid_config","detail":"{err}"}}"#).replace('\n', " "),
             )
         }
+    }
+}
+
+/// Handle `POST /_veil/internal/acme-challenge` — same credentials and
+/// hardening as the config push (header precheck, per-IP budget), then
+/// atomically replace the active HTTP-01 challenge set.
+async fn handle_acme_push(
+    req: Request<Incoming>,
+    ctx: &crate::pipeline::RequestContext,
+    state: &AppState,
+) -> Response<ProxyBody> {
+    if state.node_token.is_none() && state.push_hmac_key.is_none() {
+        return json_response(
+            StatusCode::FORBIDDEN,
+            r#"{"error":"push_disabled","detail":"No push credentials configured."}"#,
+        );
+    }
+
+    let provided_token = req
+        .headers()
+        .get(NODE_TOKEN_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    let provided_signature = req
+        .headers()
+        .get(state.signature_header.as_str())
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+
+    if provided_token.is_none() && provided_signature.is_none() {
+        warn!(client_ip = %ctx.client_ip, "acme push without credentials rejected");
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            r#"{"error":"missing_credentials","detail":"Node token or push signature required."}"#,
+        );
+    }
+
+    let rate_key = format!("_veil:acme_push:{}", ctx.client_ip);
+    if !state
+        .limiter
+        .allow(&rate_key, CONFIG_PUSH_RATE_LIMIT, CONFIG_PUSH_RATE_WINDOW_SECS)
+    {
+        warn!(client_ip = %ctx.client_ip, "acme push rate limit exceeded");
+        return crate::response::rate_limited(CONFIG_PUSH_RATE_WINDOW_SECS, false);
+    }
+
+    let token_ok = matches!(
+        (&state.node_token, &provided_token),
+        (Some(expected), Some(provided))
+            if constant_time_eq(provided.as_bytes(), expected.as_bytes())
+    );
+
+    let body_bytes = match req.collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(_) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                r#"{"error":"body_read_failed","detail":"Request body could not be read."}"#,
+            );
+        }
+    };
+
+    // Challenge sets are tiny; anything bigger than 64 KiB is abuse.
+    if body_bytes.len() > 64 * 1024 {
+        return json_response(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            r#"{"error":"body_too_large","detail":"Challenge payload exceeds 64 KiB."}"#,
+        );
+    }
+
+    let signature_ok = matches!(
+        (&state.push_hmac_key, &provided_signature),
+        (Some(key), Some(signature)) if verify_push_signature(key, &body_bytes, signature)
+    );
+
+    if !token_ok && !signature_ok {
+        warn!(client_ip = %ctx.client_ip, "acme push with invalid credentials rejected");
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            r#"{"error":"invalid_credentials","detail":"Node token or push signature invalid."}"#,
+        );
+    }
+
+    match serde_json::from_slice::<ChallengeSet>(&body_bytes) {
+        Ok(set) => {
+            let count = state.acme.replace(set);
+            info!(challenges = count, client_ip = %ctx.client_ip, "acme challenge set applied");
+            json_response(StatusCode::OK, &format!(r#"{{"ok":true,"challenges":{count}}}"#))
+        }
+        Err(err) => json_response(
+            StatusCode::BAD_REQUEST,
+            &format!(r#"{{"error":"invalid_payload","detail":"{err}"}}"#).replace('\n', " "),
+        ),
     }
 }
 

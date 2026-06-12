@@ -77,6 +77,11 @@ builder.Services.AddHttpClient(ConfigSyncService.HttpClientName,
     client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHostedService<ConfigSyncService>();
 
+// ACME: provisions/renews certificates, publishing HTTP-01 challenges to
+// edge nodes. Idles unless Certificates:AcmeDirectoryUrl + EncryptionKey set.
+builder.Services.AddSingleton<Veil.Api.Acme.EdgeChallengePublisher>();
+builder.Services.AddHostedService<Veil.Api.Acme.AcmeProvisioningService>();
+
 
 var app = builder.Build();
 

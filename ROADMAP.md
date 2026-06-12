@@ -174,15 +174,15 @@
 - [ ] Renewal trigger (comes with 5.4 background service)
 
 ### 5.3 ACME provisioning
-- [ ] Certes ACME v2 client
-- [ ] HTTP-01 challenge token registration with edge node
-- [ ] Edge serves `/.well-known/acme-challenge/{token}`
-- [ ] Order polling (max 60s)
-- [ ] Private key encryption (AES-256-GCM) before storage
-- [ ] Config push after successful provisioning
+- [x] Certes ACME v2 client (`AcmeProvisioningService` hosted in Veil.Api; directory URL configurable, Pebble-friendly `AcmeAllowUntrustedTls` for dev; badNonce retry on finalize)
+- [x] HTTP-01 challenge token registration with edge node (`EdgeChallengePublisher` → `POST /_veil/internal/acme-challenge`, HMAC-signed, all enabled nodes)
+- [x] Edge serves `/.well-known/acme-challenge/{token}` (before zone/rule logic — block rules can't break issuance)
+- [x] Order polling (max 60s, configurable)
+- [x] Private key encryption (AES-256-GCM) before storage (`PrivateKeyProtector`, `Certificates:EncryptionKey`)
+- [ ] Config push after successful provisioning (CertificateIssued event raised; push pipeline wiring pending)
 
 ### 5.4 Certificate renewal
-- [ ] `CertificateRenewalBackgroundService` — daily check, renew within 30 days
+- [x] Renewal in the ACME worker loop — renews Active certs within `RenewBeforeDays` (30) of expiry; failed renewal keeps serving the old material
 
 ---
 

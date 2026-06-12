@@ -1,3 +1,4 @@
+pub mod acme;
 pub mod analytics;
 pub mod challenge;
 pub mod config;

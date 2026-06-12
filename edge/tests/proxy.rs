@@ -484,3 +484,49 @@ async fn emits_analytics_records_for_proxied_and_blocked_requests() {
     assert_eq!(records[1].verdict, "block");
     assert_eq!(records[1].rule_id.as_deref(), Some("block-admin"));
 }
+
+async fn push_acme(proxy: SocketAddr, token: Option<&str>, body: &str) -> Response<Incoming> {
+    let mut builder = Request::builder()
+        .method(hyper::Method::POST)
+        .uri(format!("http://{proxy}/_veil/internal/acme-challenge"))
+        .header(hyper::header::CONTENT_TYPE, "application/json");
+    if let Some(token) = token {
+        builder = builder.header("x-veil-node-token", token);
+    }
+    let req = builder.body(Full::new(Bytes::from(body.to_owned()))).unwrap();
+
+    let post_client: Client<hyper_util::client::legacy::connect::HttpConnector, Full<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    post_client.request(req).await.unwrap()
+}
+
+#[tokio::test]
+async fn acme_push_then_http01_served_before_rules() {
+    let upstream = spawn_upstream().await;
+    let proxy = spawn_proxy_with_token(upstream).await;
+    let client = client();
+
+    // Unknown token → 404 (not proxied to upstream).
+    let response = get(&client, proxy, "/.well-known/acme-challenge/tok").await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // Bad credentials are rejected.
+    let body = r#"{"challenges":[{"token":"tok","keyAuthorization":"tok.thumbprint"}]}"#;
+    let response = push_acme(proxy, Some("wrong-token"), body).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    // Publish, then the key authorization is served as plain text.
+    let response = push_acme(proxy, Some(NODE_TOKEN), body).await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = get(&client, proxy, "/.well-known/acme-challenge/tok").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(&bytes[..], b"tok.thumbprint");
+
+    // An empty publish clears the set.
+    let response = push_acme(proxy, Some(NODE_TOKEN), r#"{"challenges":[]}"#).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = get(&client, proxy, "/.well-known/acme-challenge/tok").await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
