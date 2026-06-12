@@ -198,6 +198,23 @@ export interface TopIpsResponse {
   items: Array<TopIpEntry>
 }
 
+export interface VerdictCount {
+  verdict: string
+  total: number
+}
+
+export interface VerdictBreakdownResponse {
+  windowHours: number
+  items: Array<VerdictCount>
+}
+
+export interface ChallengeStatsResponse {
+  windowHours: number
+  issued: number
+  passed: number
+  passRate: number
+}
+
 export interface EdgeNodeSummary {
   id: string
   name: string

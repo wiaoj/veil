@@ -1,5 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
-import type { AnalyticsSummary, TopIpsResponse } from '#/lib/api'
+import type {
+  AnalyticsSummary,
+  ChallengeStatsResponse,
+  TopIpsResponse,
+  VerdictBreakdownResponse,
+} from '#/lib/api'
 import { useApiData } from '#/lib/useApiData'
 
 export const Route = createFileRoute('/')({
@@ -9,6 +14,8 @@ export const Route = createFileRoute('/')({
 function Overview() {
   const summary = useApiData<AnalyticsSummary>('/v1/analytics/summary?hours=24')
   const topIps = useApiData<TopIpsResponse>('/v1/analytics/top-ips?hours=24&limit=5')
+  const verdicts = useApiData<VerdictBreakdownResponse>('/v1/analytics/verdicts?hours=24')
+  const challenges = useApiData<ChallengeStatsResponse>('/v1/analytics/challenges?hours=24')
 
   if (summary.loading) return <Centered>Yükleniyor…</Centered>
   if (summary.error) return <Centered>{summary.error}</Centered>
@@ -46,6 +53,18 @@ function Overview() {
         )}
       </section>
 
+      <div className="grid gap-8 md:grid-cols-2">
+        <section>
+          <h2 className="mb-2 text-sm font-medium text-gray-500">Verdict dağılımı</h2>
+          <VerdictBreakdown data={verdicts.data} />
+        </section>
+
+        <section>
+          <h2 className="mb-2 text-sm font-medium text-gray-500">Challenge istatistikleri</h2>
+          <ChallengeStats data={challenges.data} />
+        </section>
+      </div>
+
       <section>
         <h2 className="mb-2 text-sm font-medium text-gray-500">En aktif IP'ler</h2>
         <table className="w-full text-sm">
@@ -70,6 +89,67 @@ function Overview() {
         </table>
       </section>
     </main>
+  )
+}
+
+const VERDICT_LABEL: Record<string, { label: string; bar: string }> = {
+  allow: { label: 'İzin verildi', bar: 'bg-emerald-500' },
+  block: { label: 'Engellendi', bar: 'bg-red-500' },
+  challenge: { label: 'Challenge', bar: 'bg-amber-500' },
+  challenge_pass: { label: 'Challenge geçti', bar: 'bg-sky-500' },
+  rate_limit: { label: 'Rate limit', bar: 'bg-purple-500' },
+}
+
+function VerdictBreakdown({ data }: { data: VerdictBreakdownResponse | null }) {
+  const items = data?.items ?? []
+  if (items.length === 0) {
+    return <p className="text-sm text-gray-500">Bu pencerede veri yok.</p>
+  }
+  const max = Math.max(1, ...items.map((v) => v.total))
+  return (
+    <div className="space-y-2 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+      {items.map((v) => {
+        const meta = VERDICT_LABEL[v.verdict] ?? { label: v.verdict, bar: 'bg-gray-400' }
+        return (
+          <div key={v.verdict} className="flex items-center gap-3 text-sm">
+            <span className="w-32 shrink-0 text-gray-600 dark:text-gray-300">{meta.label}</span>
+            <div className="h-3 flex-1 overflow-hidden rounded bg-gray-100 dark:bg-gray-900">
+              <div className={`h-full rounded ${meta.bar}`} style={{ width: `${(v.total / max) * 100}%` }} />
+            </div>
+            <span className="w-16 shrink-0 text-right tabular-nums text-gray-500">{v.total.toLocaleString()}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ChallengeStats({ data }: { data: ChallengeStatsResponse | null }) {
+  if (!data) {
+    return <p className="text-sm text-gray-500">Bu pencerede veri yok.</p>
+  }
+  const ratePct = Math.round(data.passRate * 1000) / 10
+  return (
+    <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+      <div className="grid grid-cols-3 gap-4 text-center">
+        <div>
+          <p className="text-sm text-gray-500">Sunulan</p>
+          <p className="text-2xl font-semibold text-amber-600">{data.issued.toLocaleString()}</p>
+        </div>
+        <div>
+          <p className="text-sm text-gray-500">Geçen</p>
+          <p className="text-2xl font-semibold text-emerald-600">{data.passed.toLocaleString()}</p>
+        </div>
+        <div>
+          <p className="text-sm text-gray-500">Geçiş oranı</p>
+          <p className="text-2xl font-semibold">{ratePct}%</p>
+        </div>
+      </div>
+      <div className="mt-4 h-2 overflow-hidden rounded bg-gray-100 dark:bg-gray-900">
+        <div className="h-full rounded bg-emerald-500" style={{ width: `${Math.min(100, ratePct)}%` }} />
+      </div>
+      <p className="mt-1 text-xs text-gray-400">Geçiş oranı = geçen / (sunulan + geçen)</p>
+    </div>
   )
 }
 

@@ -223,7 +223,7 @@
 
 ### 7.3 Analytics
 - [x] Request volume chart (time series — CSS bars on the overview; chart lib later)
-- [ ] Top IPs, verdict breakdown, challenge stats (top IPs done; verdict/challenge widgets pending)
+- [x] Top IPs, verdict breakdown, challenge stats
 
 ### 7.4 Edge node management
 - [x] Node list with per-node sync status (last push result surfaced on `GET /v1/edge-nodes`)
