@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as ZonesRouteImport } from './routes/zones'
 import { Route as NodesRouteImport } from './routes/nodes'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as CertificatesRouteImport } from './routes/certificates'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ZonesNewRouteImport } from './routes/zones.new'
@@ -31,6 +32,11 @@ const NodesRoute = NodesRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CertificatesRoute = CertificatesRouteImport.update({
+  id: '/certificates',
+  path: '/certificates',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -62,6 +68,7 @@ const NodesNodeIdRoute = NodesNodeIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/certificates': typeof CertificatesRoute
   '/login': typeof LoginRoute
   '/nodes': typeof NodesRouteWithChildren
   '/zones': typeof ZonesRouteWithChildren
@@ -72,6 +79,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/certificates': typeof CertificatesRoute
   '/login': typeof LoginRoute
   '/nodes': typeof NodesRouteWithChildren
   '/zones': typeof ZonesRouteWithChildren
@@ -83,6 +91,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/certificates': typeof CertificatesRoute
   '/login': typeof LoginRoute
   '/nodes': typeof NodesRouteWithChildren
   '/zones': typeof ZonesRouteWithChildren
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/certificates'
     | '/login'
     | '/nodes'
     | '/zones'
@@ -105,6 +115,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/certificates'
     | '/login'
     | '/nodes'
     | '/zones'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
+    | '/certificates'
     | '/login'
     | '/nodes'
     | '/zones'
@@ -126,6 +138,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  CertificatesRoute: typeof CertificatesRoute
   LoginRoute: typeof LoginRoute
   NodesRoute: typeof NodesRouteWithChildren
   ZonesRoute: typeof ZonesRouteWithChildren
@@ -152,6 +165,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/certificates': {
+      id: '/certificates'
+      path: '/certificates'
+      fullPath: '/certificates'
+      preLoaderRoute: typeof CertificatesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -217,6 +237,7 @@ const ZonesRouteWithChildren = ZonesRoute._addFileChildren(ZonesRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  CertificatesRoute: CertificatesRoute,
   LoginRoute: LoginRoute,
   NodesRoute: NodesRouteWithChildren,
   ZonesRoute: ZonesRouteWithChildren,

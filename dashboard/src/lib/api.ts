@@ -215,6 +215,31 @@ export interface ChallengeStatsResponse {
   passRate: number
 }
 
+export interface CertificateSummary {
+  id: string
+  hostname: string
+  status: string
+  requestedAtUtc: string
+  expiresAtUtc: string | null
+}
+
+export interface ListCertificatesResponse {
+  items: Array<CertificateSummary>
+  page: number
+  pageSize: number
+  totalCount: number
+}
+
+export interface CertificateDetail {
+  id: string
+  hostname: string
+  status: string
+  requestedAtUtc: string
+  issuedAtUtc: string | null
+  expiresAtUtc: string | null
+  lastError: string | null
+}
+
 export interface EdgeNodeSummary {
   id: string
   name: string

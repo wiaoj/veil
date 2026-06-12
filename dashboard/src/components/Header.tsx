@@ -37,6 +37,13 @@ export default function Header() {
           >
             Edge node'lar
           </Link>
+          <Link
+            to="/certificates"
+            className="nav-link"
+            activeProps={{ className: 'nav-link is-active' }}
+          >
+            Sertifikalar
+          </Link>
         </div>
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">

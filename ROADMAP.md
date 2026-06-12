@@ -234,6 +234,9 @@
 - [ ] WebSocket connection
 - [ ] Live request log stream
 
+### 7.6 Certificates
+- [x] Certificate list (status, expiry countdown) + request form
+
 ---
 
 ## Phase 8 — Hardening & Observability
