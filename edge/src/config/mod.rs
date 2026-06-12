@@ -34,6 +34,18 @@ pub struct Zone {
     pub upstream: String,
     #[serde(default)]
     pub rules: Vec<Rule>,
+    /// Control-plane-provisioned certificate material for this zone's hosts
+    /// (Phase 5). Picked by SNI on the HTTPS listener.
+    #[serde(default)]
+    pub tls: Option<ZoneTls>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ZoneTls {
+    /// PEM certificate chain, leaf first.
+    pub cert_pem: String,
+    /// PEM private key.
+    pub key_pem: String,
 }
 
 #[derive(Debug, Deserialize)]

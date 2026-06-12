@@ -69,6 +69,9 @@ pub struct AppState {
     pub analytics: Option<Arc<LogBuffer>>,
     /// Active ACME HTTP-01 challenges published by the control plane.
     pub acme: AcmeStore,
+    /// SNI certificate resolver fed by config pushes. `None` when no HTTPS
+    /// listener is running (nothing to update).
+    pub cert_resolver: Option<Arc<crate::tls::DynamicCertResolver>>,
 }
 
 impl AppState {
@@ -115,6 +118,7 @@ impl AppState {
             config_cache_path,
             analytics: None,
             acme: AcmeStore::new(),
+            cert_resolver: None,
         }
     }
 }
@@ -465,6 +469,9 @@ async fn handle_config_push(
     match Config::from_json(raw) {
         Ok(config) => {
             let zones = config.zones.len();
+            if let Some(resolver) = &state.cert_resolver {
+                resolver.update_from_config(&config);
+            }
             state.config.swap(config);
             if let Some(path) = &state.config_cache_path {
                 cache::store(path, raw);

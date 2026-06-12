@@ -33,6 +33,7 @@ public sealed class ConfigSyncService(
     ConfigPushSignal signal,
     IDbContextFactory<ZonesDbContext> zonesDbFactory,
     IDbContextFactory<EdgeNodesDbContext> nodesDbFactory,
+    ZoneCertificateProvider certificateProvider,
     IObfuscator<RuleId> ruleObfuscator,
     IHttpClientFactory httpClientFactory,
     TimeProvider timeProvider,
@@ -106,7 +107,8 @@ public sealed class ConfigSyncService(
             .Include(z => z.Rules)
             .ToListAsync(cancellationToken);
 
-        EdgeConfigSnapshot snapshot = EdgeConfigSnapshotBuilder.Build(zones, ruleObfuscator);
+        EdgeConfigSnapshot snapshot = EdgeConfigSnapshotBuilder.Build(zones, ruleObfuscator,
+            await certificateProvider.GetActiveCertificatesAsync(cancellationToken));
         string json = JsonSerializer.Serialize(snapshot);
         byte[] jsonBytes = Encoding.UTF8.GetBytes(json);
         string snapshotHash = Sha256Hash.Compute(jsonBytes).ToHexString().ToLower();

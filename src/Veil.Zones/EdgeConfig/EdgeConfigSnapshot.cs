@@ -21,7 +21,18 @@ public sealed record EdgeZoneConfig(
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("hosts")] List<string> Hosts,
     [property: JsonPropertyName("upstream")] string Upstream,
-    [property: JsonPropertyName("rules")] List<EdgeRuleConfig> Rules);
+    [property: JsonPropertyName("rules")] List<EdgeRuleConfig> Rules,
+    [property: JsonPropertyName("tls"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    EdgeZoneTlsConfig? Tls = null);
+
+/// <summary>
+/// TLS material the edge serves for the zone's hosts (SNI). The key is the
+/// decrypted PEM — pushes carry it to the node, which holds it in memory
+/// only.
+/// </summary>
+public sealed record EdgeZoneTlsConfig(
+    [property: JsonPropertyName("cert_pem")] string CertPem,
+    [property: JsonPropertyName("key_pem")] string KeyPem);
 
 public sealed record EdgeRuleConfig(
     [property: JsonPropertyName("id")] string Id,
@@ -42,7 +53,12 @@ public sealed record EdgeRateLimitConfig(
     [property: JsonPropertyName("window_secs")] int WindowSecs);
 
 public static class EdgeConfigSnapshotBuilder {
-    public static EdgeConfigSnapshot Build(IReadOnlyList<Zone> zones, IObfuscator<RuleId> ruleObfuscator) {
+    /// <param name="certificates">Active TLS material keyed by hostname
+    /// (lowercase); zones without an entry are served plaintext.</param>
+    public static EdgeConfigSnapshot Build(
+        IReadOnlyList<Zone> zones,
+        IObfuscator<RuleId> ruleObfuscator,
+        IReadOnlyDictionary<string, EdgeZoneTlsConfig>? certificates = null) {
         List<EdgeZoneConfig> edgeZones = [];
 
         foreach(Zone zone in zones) {
@@ -60,11 +76,15 @@ public static class EdgeConfigSnapshotBuilder {
                 ? []
                 : MapRules(zone, ruleObfuscator);
 
+            EdgeZoneTlsConfig? tls = null;
+            certificates?.TryGetValue(zone.Hostname.Value.ToLowerInvariant(), out tls);
+
             edgeZones.Add(new EdgeZoneConfig(
                 zone.Hostname.Value,
                 [zone.Hostname.Value],
                 target.Url.ToString().TrimEnd('/'),
-                rules));
+                rules,
+                tls));
         }
 
         return new EdgeConfigSnapshot(TrustForwardedHeaders: false, edgeZones);

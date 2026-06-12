@@ -1,4 +1,5 @@
 using Tyto;
+using Veil.Certificates.IntegrationEvents;
 using Veil.EdgeNodes.Contracts.IntegrationEvents;
 using Veil.Zones.Contracts.IntegrationEvents;
 
@@ -16,6 +17,18 @@ public sealed class ZoneConfigChangedHandler(
 
     public ValueTask HandleAsync(IMessageContext<ZoneConfigChanged> context, CancellationToken cancellationToken = default) {
         logger.LogDebug("Zone {ZoneId} config changed; waking push loop", context.Message.ZoneId);
+        signal.Notify();
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class CertificateIssuedHandler(
+    ConfigPushSignal signal,
+    ILogger<CertificateIssuedHandler> logger) : IEventHandler<CertificateIssued> {
+
+    public ValueTask HandleAsync(IMessageContext<CertificateIssued> context, CancellationToken cancellationToken = default) {
+        logger.LogInformation("Certificate for {Hostname} issued; pushing TLS material to edge nodes",
+            context.Message.Hostname);
         signal.Notify();
         return ValueTask.CompletedTask;
     }

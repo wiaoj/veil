@@ -33,6 +33,7 @@ public static class EdgeConfigEndpoints {
         IEdgeNodeTokenVerifier tokenVerifier,
         IDbContextFactory<ZonesDbContext> zonesDbFactory,
         IObfuscator<RuleId> ruleObfuscator,
+        ConfigSync.ZoneCertificateProvider certificateProvider,
         CancellationToken cancellationToken) {
 
         string? token = request.Headers[NodeTokenHeader].FirstOrDefault();
@@ -52,7 +53,8 @@ public static class EdgeConfigEndpoints {
             .Include(z => z.Rules)
             .ToListAsync(cancellationToken);
 
-        EdgeConfigSnapshot snapshot = EdgeConfigSnapshotBuilder.Build(zones, ruleObfuscator);
+        EdgeConfigSnapshot snapshot = EdgeConfigSnapshotBuilder.Build(zones, ruleObfuscator,
+            await certificateProvider.GetActiveCertificatesAsync(cancellationToken));
         return Results.Ok(snapshot);
     }
 }

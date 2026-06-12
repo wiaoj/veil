@@ -53,6 +53,7 @@ builder.AddTyto(tyto => {
     tyto.MessageDefinitions(define => {
         define.Add<ZoneConfigChanged>("zones.config-changed", 1);
         define.Add<EdgeNodeRegistered>("edge-nodes.registered", 1);
+        define.Add<Veil.Certificates.IntegrationEvents.CertificateIssued>("certificates.issued", 1);
     });
     // Publishes go to the 'veil.events' exchange; the in-memory broker
     // fans out to bound queues (RabbitMQ topology semantics).
@@ -63,14 +64,17 @@ builder.AddTyto(tyto => {
             endpoint.ListenOn("memory", "veil.config-sync");
             endpoint.Routing.Publish<ZoneConfigChanged>().To("memory", "veil.events");
             endpoint.Routing.Publish<EdgeNodeRegistered>().To("memory", "veil.events");
+            endpoint.Routing.Publish<Veil.Certificates.IntegrationEvents.CertificateIssued>().To("memory", "veil.events");
             endpoint.AddHandler<ZoneConfigChangedHandler>();
             endpoint.AddHandler<EdgeNodeRegisteredHandler>();
+            endpoint.AddHandler<CertificateIssuedHandler>();
         });
     });
 });
 
 // Config sync: pushes signed zone snapshots to edge nodes on change.
 builder.Services.AddSingleton<ConfigPushSignal>();
+builder.Services.AddSingleton<ZoneCertificateProvider>();
 builder.Services.Configure<ConfigSyncOptions>(
     builder.Configuration.GetSection(ConfigSyncOptions.SectionName));
 builder.Services.AddHttpClient(ConfigSyncService.HttpClientName,

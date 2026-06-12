@@ -33,13 +33,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "veil-edge listening"
     );
 
-    let state = Arc::new(AppState::new(config));
+    let mut state = AppState::new(config);
 
-    // TLS termination (Phase 2.2) — enabled by VEIL_TLS_CERT + VEIL_TLS_KEY.
-    if let Some(tls) = veil_edge::tls::settings_from_env()? {
-        let acceptor = veil_edge::tls::build_acceptor(&tls.cert_pem, &tls.key_pem)?;
-        let tls_listener = TcpListener::bind(&tls.listen_addr).await?;
-        info!(addr = %tls.listen_addr, "veil-edge listening (https)");
+    // TLS termination (Phase 2.2 + 5) — VEIL_TLS_CERT/KEY provide a static
+    // fallback pair; VEIL_LISTEN_HTTPS alone starts an SNI-only listener fed
+    // by control-plane-pushed zone certificates.
+    let tls_setup = if let Some(tls) = veil_edge::tls::settings_from_env()? {
+        let fallback = tls
+            .fallback
+            .as_ref()
+            .map(|(cert, key)| veil_edge::tls::certified_key(cert, key))
+            .transpose()?
+            .map(Arc::new);
+        let resolver = Arc::new(veil_edge::tls::DynamicCertResolver::new(fallback));
+        resolver.update_from_config(&state.config.load());
+        state.cert_resolver = Some(Arc::clone(&resolver));
+        Some((tls.listen_addr, resolver))
+    } else {
+        None
+    };
+
+    let state = Arc::new(state);
+
+    if let Some((listen_addr, resolver)) = tls_setup {
+        let acceptor = veil_edge::tls::build_resolver_acceptor(resolver);
+        let tls_listener = TcpListener::bind(&listen_addr).await?;
+        info!(addr = %listen_addr, "veil-edge listening (https)");
         let tls_state = Arc::clone(&state);
         tokio::spawn(async move {
             if let Err(err) = proxy::serve_tls(tls_listener, acceptor, tls_state).await {

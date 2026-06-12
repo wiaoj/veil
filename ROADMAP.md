@@ -179,7 +179,7 @@
 - [x] Edge serves `/.well-known/acme-challenge/{token}` (before zone/rule logic — block rules can't break issuance)
 - [x] Order polling (max 60s, configurable)
 - [x] Private key encryption (AES-256-GCM) before storage (`PrivateKeyProtector`, `Certificates:EncryptionKey`)
-- [ ] Config push after successful provisioning (CertificateIssued event raised; push pipeline wiring pending)
+- [x] Config push after successful provisioning — `CertificateIssued` outbox event wakes ConfigSync; snapshots carry per-zone `tls` material; edge SNI resolver (`DynamicCertResolver`) swaps certificates without listener restart
 
 ### 5.4 Certificate renewal
 - [x] Renewal in the ACME worker loop — renews Active certs within `RenewBeforeDays` (30) of expiry; failed renewal keeps serving the old material
