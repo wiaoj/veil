@@ -241,7 +241,7 @@
 
 ## Phase 8 — Hardening & Observability
 
-- [ ] Prometheus metrics — edge (RPS, latency histograms, verdict counts)
+- [x] Prometheus metrics — edge (`GET /metrics`): `veil_requests_total{verdict}`, `veil_request_duration_seconds` histogram, `veil_upstream_errors_total` — dependency-free atomics
 - [ ] Prometheus metrics — control plane (push rate, ClickHouse write rate)
 - [x] Health check endpoints (`/healthz` liveness, `/readyz` readiness) on all HTTP services — control plane + analytics worker probe PostgreSQL; edge readiness requires a loaded zone config
 - [ ] Graceful shutdown — drain in-flight requests

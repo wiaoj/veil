@@ -72,6 +72,8 @@ pub struct AppState {
     /// SNI certificate resolver fed by config pushes. `None` when no HTTPS
     /// listener is running (nothing to update).
     pub cert_resolver: Option<Arc<crate::tls::DynamicCertResolver>>,
+    /// Prometheus metrics, exposed on `GET /metrics`.
+    pub metrics: crate::metrics::Metrics,
 }
 
 impl AppState {
@@ -119,6 +121,7 @@ impl AppState {
             analytics: None,
             acme: AcmeStore::new(),
             cert_resolver: None,
+            metrics: crate::metrics::Metrics::new(),
         }
     }
 }
@@ -204,6 +207,11 @@ pub async fn handle(
     let config = state.config.load();
     let ctx = inspector::inspect(&req, peer, config.trust_forwarded_headers);
 
+    // ── Reserved path: Prometheus metrics scrape ─────────────────────
+    if req.method() == Method::GET && ctx.path == "/metrics" {
+        return text(StatusCode::OK, &state.metrics.render());
+    }
+
     // ── Reserved paths: health probes (no zone resolution / logging) ──
     if req.method() == Method::GET && (ctx.path == "/healthz" || ctx.path == "/readyz") {
         // Liveness: the listener is accepting. Readiness: a config with at
@@ -252,6 +260,7 @@ pub async fn handle(
             total_ms = started.elapsed().as_millis() as u64,
             "request"
         );
+        state.metrics.record_request("no_zone", started.elapsed().as_secs_f64());
         record_request(&state, &ctx, "-", "no_zone", None, response.status().as_u16(), ts_ms, started);
         return response;
     };
@@ -293,6 +302,7 @@ pub async fn handle(
         total_ms = started.elapsed().as_millis() as u64,
         "request"
     );
+    state.metrics.record_request(label, started.elapsed().as_secs_f64());
     record_request(
         &state,
         &ctx,
@@ -622,6 +632,7 @@ async fn forward_or_502(
         Ok(response) => response,
         Err(err) => {
             warn!(upstream, error = %err, "upstream request failed");
+            state.metrics.record_upstream_error();
             text(StatusCode::BAD_GATEWAY, "502 bad gateway\n")
         }
     }

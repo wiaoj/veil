@@ -558,3 +558,23 @@ async fn readyz_unavailable_without_zones() {
     let response = get(&client, addr, "/readyz").await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
+
+#[tokio::test]
+async fn metrics_endpoint_reports_request_counters() {
+    let upstream = spawn_upstream().await;
+    let proxy = spawn_proxy(upstream).await;
+    let client = client();
+
+    // Generate one allow and one block (spawn_proxy blocks /admin).
+    let _ = get(&client, proxy, "/ok").await;
+    let _ = get(&client, proxy, "/admin/secret").await;
+
+    let response = get(&client, proxy, "/metrics").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let text = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(text.contains("veil_requests_total{verdict=\"allow\"} 1"));
+    assert!(text.contains("veil_requests_total{verdict=\"block\"} 1"));
+    assert!(text.contains("veil_request_duration_seconds_count"));
+}
