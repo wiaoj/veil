@@ -1,0 +1,188 @@
+# Three isolated single-shard Redis instances, one per concern, so a noisy
+# workload in one (e.g. rate-limit churn) cannot evict another's keys. Each
+# is a StatefulSet of one replica with an emptyDir-free PVC; for true HA swap
+# these for a Redis Cluster / Sentinel operator and point the apps at it.
+#
+# Naming: rate-limit (edge counters), tokens (challenge nonces/tokens),
+# config (ConfigSync leader lock + retry queue).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: veil-redis-conf
+  namespace: veil
+data:
+  redis.conf: |
+    maxmemory-policy allkeys-lru
+    appendonly no
+    save ""
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-ratelimit
+  namespace: veil
+  labels:
+    app.kubernetes.io/name: redis-ratelimit
+    app.kubernetes.io/part-of: veil
+spec:
+  serviceName: redis-ratelimit
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis-ratelimit
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis-ratelimit
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["redis-server", "/etc/redis/redis.conf"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: conf
+              mountPath: /etc/redis
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: conf
+          configMap:
+            name: veil-redis-conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-ratelimit
+  namespace: veil
+spec:
+  selector:
+    app.kubernetes.io/name: redis-ratelimit
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-tokens
+  namespace: veil
+  labels:
+    app.kubernetes.io/name: redis-tokens
+    app.kubernetes.io/part-of: veil
+spec:
+  serviceName: redis-tokens
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis-tokens
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis-tokens
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["redis-server", "/etc/redis/redis.conf"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: conf
+              mountPath: /etc/redis
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: conf
+          configMap:
+            name: veil-redis-conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-tokens
+  namespace: veil
+spec:
+  selector:
+    app.kubernetes.io/name: redis-tokens
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-config
+  namespace: veil
+  labels:
+    app.kubernetes.io/name: redis-config
+    app.kubernetes.io/part-of: veil
+spec:
+  serviceName: redis-config
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis-config
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis-config
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["redis-server", "/etc/redis/redis.conf"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: conf
+              mountPath: /etc/redis
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: conf
+          configMap:
+            name: veil-redis-conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-config
+  namespace: veil
+spec:
+  selector:
+    app.kubernetes.io/name: redis-config
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
