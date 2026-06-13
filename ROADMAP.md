@@ -219,7 +219,7 @@
 
 ### 7.2 Zones & Rules
 - [x] Zone list, zone detail (upstream/challenge cards, pause/resume, rule enable/disable/delete)
-- [ ] Rule builder — condition composer (single-condition form done; multi-condition + drag-and-drop priority pending)
+- [x] Rule builder — multi-condition composer (add/remove AND-ed conditions, per-type inputs); drag-and-drop priority reordering still pending
 - [x] Create / edit / delete flows (zone create, rule add/toggle/delete, pause/resume)
 
 ### 7.3 Analytics

@@ -135,6 +135,19 @@ const CONDITION_TYPES = [
   'user_agent',
 ] as const
 
+interface ConditionDraft {
+  type: string
+  value: string
+  headerName: string
+}
+
+const INPUT =
+  'rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900'
+
+function newCondition(): ConditionDraft {
+  return { type: 'path_match', value: '', headerName: '' }
+}
+
 function AddRuleForm({
   busy,
   nextPriority,
@@ -146,76 +159,114 @@ function AddRuleForm({
 }) {
   const [name, setName] = useState('')
   const [action, setAction] = useState('Block')
-  const [type, setType] = useState<string>('path_match')
-  const [value, setValue] = useState('')
-  const [headerName, setHeaderName] = useState('')
+  const [conditions, setConditions] = useState<Array<ConditionDraft>>([newCondition()])
   const [requests, setRequests] = useState(60)
   const [windowSecs, setWindowSecs] = useState(60)
 
+  function patch(index: number, change: Partial<ConditionDraft>) {
+    setConditions((cs) => cs.map((c, i) => (i === index ? { ...c, ...change } : c)))
+  }
+
   function submit(event: React.FormEvent) {
     event.preventDefault()
-    const condition =
-      type === 'asn'
-        ? { type, asn: Number(value) }
-        : type === 'header'
-          ? { type, name: headerName, value }
-          : { type, value }
+    const mapped = conditions.map((c) =>
+      c.type === 'asn'
+        ? { type: c.type, asn: Number(c.value) }
+        : c.type === 'header'
+          ? { type: c.type, name: c.headerName, value: c.value }
+          : { type: c.type, value: c.value },
+    )
     onAdd({
       name,
       priority: nextPriority,
       action,
-      conditions: [condition],
+      conditions: mapped,
       rateLimit: action === 'RateLimit' ? { requests, windowSecs } : null,
     })
     setName('')
-    setValue('')
+    setConditions([newCondition()])
   }
-
-  const input =
-    'rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900'
 
   return (
     <form onSubmit={submit} className="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
       <h2 className="text-sm font-medium">Kural ekle</h2>
+
       <div className="flex flex-wrap items-end gap-2">
-        <input required placeholder="Kural adı" value={name} onChange={(e) => setName(e.target.value)} className={input} />
-        <select value={action} onChange={(e) => setAction(e.target.value)} className={input}>
+        <input required placeholder="Kural adı" value={name} onChange={(e) => setName(e.target.value)} className={INPUT} />
+        <select value={action} onChange={(e) => setAction(e.target.value)} className={INPUT}>
           <option>Allow</option>
           <option>Block</option>
           <option>Challenge</option>
           <option>RateLimit</option>
         </select>
-        <select value={type} onChange={(e) => setType(e.target.value)} className={input}>
-          {CONDITION_TYPES.map((t) => (
-            <option key={t}>{t}</option>
-          ))}
-        </select>
-        {type === 'header' && (
-          <input required placeholder="Header adı" value={headerName} onChange={(e) => setHeaderName(e.target.value)} className={input} />
-        )}
-        <input
-          required
-          placeholder={type === 'asn' ? 'ASN (ör. 64500)' : 'Değer'}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          className={`${input} font-mono`}
-        />
         {action === 'RateLimit' && (
           <>
-            <input type="number" min={1} value={requests} onChange={(e) => setRequests(Number(e.target.value))} className={`${input} w-20`} title="İstek" />
+            <input type="number" min={1} value={requests} onChange={(e) => setRequests(Number(e.target.value))} className={`${INPUT} w-20`} title="İstek" />
             <span className="text-sm text-gray-500">istek /</span>
-            <input type="number" min={1} value={windowSecs} onChange={(e) => setWindowSecs(Number(e.target.value))} className={`${input} w-20`} title="Saniye" />
+            <input type="number" min={1} value={windowSecs} onChange={(e) => setWindowSecs(Number(e.target.value))} className={`${INPUT} w-20`} title="Saniye" />
             <span className="text-sm text-gray-500">sn</span>
           </>
         )}
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-xs text-gray-500">Koşullar (hepsi sağlanmalı — AND)</p>
+        {conditions.map((condition, index) => (
+          <div key={index} className="flex flex-wrap items-center gap-2">
+            {index > 0 && <span className="text-xs font-medium text-gray-400">VE</span>}
+            <select
+              value={condition.type}
+              onChange={(e) => patch(index, { type: e.target.value })}
+              className={INPUT}
+            >
+              {CONDITION_TYPES.map((t) => (
+                <option key={t}>{t}</option>
+              ))}
+            </select>
+            {condition.type === 'header' && (
+              <input
+                required
+                placeholder="Header adı"
+                value={condition.headerName}
+                onChange={(e) => patch(index, { headerName: e.target.value })}
+                className={INPUT}
+              />
+            )}
+            <input
+              required
+              placeholder={condition.type === 'asn' ? 'ASN (ör. 64500)' : 'Değer'}
+              value={condition.value}
+              onChange={(e) => patch(index, { value: e.target.value })}
+              className={`${INPUT} font-mono`}
+            />
+            {conditions.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setConditions((cs) => cs.filter((_, i) => i !== index))}
+                className="text-xs text-red-600 underline"
+                title="Koşulu kaldır"
+              >
+                kaldır
+              </button>
+            )}
+          </div>
+        ))}
         <button
-          type="submit"
-          disabled={busy}
-          className="rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900"
+          type="button"
+          onClick={() => setConditions((cs) => [...cs, newCondition()])}
+          className="text-xs text-gray-600 underline dark:text-gray-300"
         >
-          Ekle
+          + koşul ekle
         </button>
       </div>
+
+      <button
+        type="submit"
+        disabled={busy}
+        className="rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900"
+      >
+        Ekle
+      </button>
     </form>
   )
 }
