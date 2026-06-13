@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: veil-analytics
+  namespace: veil
+  labels:
+    app.kubernetes.io/name: veil-analytics
+    app.kubernetes.io/part-of: veil
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: veil-analytics
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: veil-analytics
+    spec:
+      containers:
+        - name: analytics
+          image: veil-analytics:latest
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8080"
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef:
+                  name: veil-secrets
+                  key: ConnectionStrings__Default
+            - name: ClickHouse__Password
+              valueFrom:
+                secretKeyRef:
+                  name: veil-secrets
+                  key: ClickHouse__Password
+          envFrom:
+            - configMapRef:
+                name: veil-config
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: veil-analytics
+  namespace: veil
+spec:
+  selector:
+    app.kubernetes.io/name: veil-analytics
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: veil-analytics
+  namespace: veil
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: veil-analytics
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

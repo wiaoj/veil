@@ -1,0 +1,41 @@
+# Non-secret configuration shared by the control-plane workloads. Data store
+# endpoints assume in-cluster Services named `postgres` and `clickhouse`
+# (managed externally or provisioned separately — see the data-store note in
+# README.md).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: veil-config
+  namespace: veil
+data:
+  ClickHouse__Url: "http://clickhouse:8123"
+  ClickHouse__Database: "veil"
+  ClickHouse__Username: "veil"
+---
+# Placeholder secret — DO NOT commit real values. Create it out-of-band, e.g.:
+#   kubectl -n veil create secret generic veil-secrets \
+#     --from-literal=ConnectionStrings__Default='Host=postgres;...' \
+#     --from-literal=ConfigSync__PushHmacKey='<64-hex>' \
+#     --from-literal=Auth__SigningKey='<key>' \
+#     --from-literal=Certificates__EncryptionKey='<64-hex>' \
+#     --from-literal=ClickHouse__Password='<pw>' \
+#     --from-literal=VEIL_PUSH_HMAC_KEY='<64-hex>'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: veil-secrets
+  namespace: veil
+type: Opaque
+stringData:
+  ConnectionStrings__Default: "Host=postgres;Port=5432;Database=veil;Username=veil;Password=CHANGE_ME"
+  ConfigSync__PushHmacKey: "CHANGE_ME_64_HEX"
+  Auth__SigningKey: "CHANGE_ME"
+  Certificates__EncryptionKey: ""
+  ClickHouse__Password: "CHANGE_ME"
+  VEIL_PUSH_HMAC_KEY: "CHANGE_ME_64_HEX"
+  # Edge fleet credentials. A DaemonSet shares one pod spec, so all edge pods
+  # present the same node token here. For per-node identity (distinct tokens
+  # + last-seen tracking), front the fleet with a self-registration init step
+  # instead of a shared token.
+  VEIL_NODE_ID: "CHANGE_ME"
+  VEIL_NODE_TOKEN: "CHANGE_ME"

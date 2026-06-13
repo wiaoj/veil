@@ -1,0 +1,78 @@
+# Edge runs on every node as a DaemonSet, taking public traffic on host
+# ports 80/443. It pulls config from the control plane Service and ships
+# request logs to the analytics Service.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: veil-edge
+  namespace: veil
+  labels:
+    app.kubernetes.io/name: veil-edge
+    app.kubernetes.io/part-of: veil
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: veil-edge
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: veil-edge
+    spec:
+      # Edge drains in-flight connections on SIGTERM (30s cap); give it room.
+      terminationGracePeriodSeconds: 40
+      containers:
+        - name: edge
+          image: veil-edge:latest
+          ports:
+            - name: http
+              containerPort: 8080
+              hostPort: 80
+            - name: https
+              containerPort: 8443
+              hostPort: 443
+          env:
+            - name: VEIL_LISTEN_HTTP
+              value: "0.0.0.0:8080"
+            - name: VEIL_LISTEN_HTTPS
+              value: "0.0.0.0:8443"
+            - name: VEIL_CONTROL_PLANE_URL
+              value: "http://veil-api:8080"
+            - name: VEIL_ANALYTICS_URL
+              value: "http://veil-analytics:8080"
+            - name: VEIL_NODE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: veil-secrets
+                  key: VEIL_NODE_ID
+            - name: VEIL_NODE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: veil-secrets
+                  key: VEIL_NODE_TOKEN
+            - name: VEIL_PUSH_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: veil-secrets
+                  key: VEIL_PUSH_HMAC_KEY
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 200m
+              memory: 128Mi
+            limits:
+              memory: 256Mi

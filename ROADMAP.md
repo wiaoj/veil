@@ -253,9 +253,9 @@
 ## Phase 9 — Deployment
 
 - [x] `docker-compose.prod.yml` — resource limits, restart policies, healthchecks; multi-stage Dockerfiles for edge (Rust) + Veil.Api/Analytics.Worker (.NET, libraries-sibling build context) under `deploy/docker/`
-- [ ] Kubernetes manifests — edge `DaemonSet`, control plane `Deployment`s
+- [x] Kubernetes manifests — edge `DaemonSet` (host 80/443), control plane `Deployment`s + `Service`s, ConfigMap/Secret, `/healthz`+`/readyz` probes (`deploy/k8s/`)
 - [ ] Redis Cluster manifests (3 isolated clusters)
-- [ ] HPA for `Veil.Api` and `Veil.Analytics`
+- [x] HPA for `Veil.Api` and `Veil.Analytics` (autoscaling/v2, CPU 70%; 2–6 and 2–8 replicas)
 - [ ] `Veil.ConfigSync` leader election verified under multi-replica
 - [ ] TLS between internal services
 - [ ] Zero-downtime deployment verified under load
