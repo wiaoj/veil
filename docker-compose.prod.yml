@@ -1,0 +1,141 @@
+# Production-leaning compose: builds the Veil images, wires them to the
+# infra with restart policies, resource limits and health checks. Secrets
+# here are placeholders — supply real values via an .env file or a secrets
+# manager. Build context for the .NET images is the parent directory that
+# holds both `veil` and `libraries` (see the Dockerfiles).
+#
+#   docker compose -f veil/docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-veil}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-veil}
+      POSTGRES_DB: ${POSTGRES_DB:-veil}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-veil}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-veil}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-veil}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-veil}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  api:
+    image: veil-api:latest
+    build:
+      context: ..
+      dockerfile: veil/deploy/docker/api.Dockerfile
+    environment:
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-veil};Username=${POSTGRES_USER:-veil};Password=${POSTGRES_PASSWORD:-veil}"
+      ConfigSync__PushHmacKey: ${VEIL_PUSH_HMAC_KEY:?set a 64-hex push key}
+      Auth__SigningKey: ${VEIL_AUTH_SIGNING_KEY:?set a signing key}
+      Auth__AdminPassword: ${VEIL_ADMIN_PASSWORD:?set an admin password}
+      Certificates__EncryptionKey: ${VEIL_CERT_ENCRYPTION_KEY:-}
+      Certificates__AcmeDirectoryUrl: ${VEIL_ACME_DIRECTORY_URL:-}
+    ports:
+      - "5210:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  analytics:
+    image: veil-analytics:latest
+    build:
+      context: ..
+      dockerfile: veil/deploy/docker/analytics-worker.Dockerfile
+    environment:
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-veil};Username=${POSTGRES_USER:-veil};Password=${POSTGRES_PASSWORD:-veil}"
+      ClickHouse__Url: "http://clickhouse:8123"
+      ClickHouse__Database: ${CLICKHOUSE_DB:-veil}
+      ClickHouse__Username: ${CLICKHOUSE_USER:-veil}
+      ClickHouse__Password: ${CLICKHOUSE_PASSWORD:-veil}
+    ports:
+      - "5001:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  edge:
+    image: veil-edge:latest
+    build:
+      context: .
+      dockerfile: deploy/docker/edge.Dockerfile
+    environment:
+      VEIL_LISTEN_HTTP: "0.0.0.0:8080"
+      VEIL_LISTEN_HTTPS: "0.0.0.0:8443"
+      VEIL_CONTROL_PLANE_URL: "http://api:8080"
+      VEIL_NODE_ID: ${VEIL_NODE_ID:?register a node and set its id}
+      VEIL_NODE_TOKEN: ${VEIL_NODE_TOKEN:?set the node token issued at registration}
+      VEIL_PUSH_HMAC_KEY: ${VEIL_PUSH_HMAC_KEY:?set a 64-hex push key}
+      VEIL_ANALYTICS_URL: "http://analytics:8080"
+    ports:
+      - "80:8080"
+      - "443:8443"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+volumes:
+  postgres_data:
+  clickhouse_data:

@@ -252,7 +252,7 @@
 
 ## Phase 9 — Deployment
 
-- [ ] `docker-compose.prod.yml` — resource limits, restart policies
+- [x] `docker-compose.prod.yml` — resource limits, restart policies, healthchecks; multi-stage Dockerfiles for edge (Rust) + Veil.Api/Analytics.Worker (.NET, libraries-sibling build context) under `deploy/docker/`
 - [ ] Kubernetes manifests — edge `DaemonSet`, control plane `Deployment`s
 - [ ] Redis Cluster manifests (3 isolated clusters)
 - [ ] HPA for `Veil.Api` and `Veil.Analytics`
