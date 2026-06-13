@@ -91,14 +91,23 @@ function ZoneDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {z.rules
-                .slice()
-                .sort((a, b) => a.priority - b.priority)
-                .map((rule) => (
+              {(() => {
+                const ordered = z.rules.slice().sort((a, b) => a.priority - b.priority)
+                const reorder = (from: number, to: number) => {
+                  const ids = ordered.map((r) => r.id)
+                  const [moved] = ids.splice(from, 1)
+                  ids.splice(to, 0, moved)
+                  return mutate(() => apiSend(`/v1/zones/${z.id}/rules/order`, 'PUT', { ruleIds: ids }))
+                }
+                return ordered.map((rule, index) => (
                   <RuleRow
                     key={rule.id}
                     rule={rule}
                     busy={busy}
+                    canMoveUp={index > 0}
+                    canMoveDown={index < ordered.length - 1}
+                    onMoveUp={() => reorder(index, index - 1)}
+                    onMoveDown={() => reorder(index, index + 1)}
                     onToggle={() =>
                       mutate(() =>
                         apiSend(`/v1/zones/${z.id}/rules/${rule.id}`, 'PUT', {
@@ -109,7 +118,8 @@ function ZoneDetailPage() {
                     }
                     onDelete={() => mutate(() => apiSend(`/v1/zones/${z.id}/rules/${rule.id}`, 'DELETE'))}
                   />
-                ))}
+                ))
+              })()}
             </tbody>
           </table>
         )}
@@ -274,17 +284,43 @@ function AddRuleForm({
 function RuleRow({
   rule,
   busy,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
   onToggle,
   onDelete,
 }: {
   rule: Rule
   busy: boolean
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
   onToggle: () => void
   onDelete: () => void
 }) {
   return (
     <tr className="border-b border-gray-100 dark:border-gray-900">
-      <td className="py-2">{rule.priority}</td>
+      <td className="py-2">
+        <span className="mr-2 tabular-nums">{rule.priority}</span>
+        <button
+          disabled={busy || !canMoveUp}
+          onClick={onMoveUp}
+          className="text-xs text-gray-500 disabled:opacity-30"
+          title="Yukarı taşı"
+        >
+          ▲
+        </button>
+        <button
+          disabled={busy || !canMoveDown}
+          onClick={onMoveDown}
+          className="text-xs text-gray-500 disabled:opacity-30"
+          title="Aşağı taşı"
+        >
+          ▼
+        </button>
+      </td>
       <td className="font-medium">{rule.name}</td>
       <td>
         {rule.action}
