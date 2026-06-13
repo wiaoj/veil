@@ -242,7 +242,7 @@
 ## Phase 8 — Hardening & Observability
 
 - [x] Prometheus metrics — edge (`GET /metrics`): `veil_requests_total{verdict}`, `veil_request_duration_seconds` histogram, `veil_upstream_errors_total` — dependency-free atomics
-- [ ] Prometheus metrics — control plane (push rate, ClickHouse write rate)
+- [x] Prometheus metrics — control plane (`GET /metrics`): `veil_config_push_total{result}` (Veil.Api), `veil_clickhouse_rows_written_total` + `veil_clickhouse_write_failures_total` (worker) — shared dependency-free `MetricsCollector` in Veil.Shared
 - [x] Health check endpoints (`/healthz` liveness, `/readyz` readiness) on all HTTP services — control plane + analytics worker probe PostgreSQL; edge readiness requires a loaded zone config
 - [ ] Graceful shutdown — drain in-flight requests
 - [ ] Integration test suite (Testcontainers — PostgreSQL, Redis, ClickHouse)

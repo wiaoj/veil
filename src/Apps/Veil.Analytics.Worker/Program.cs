@@ -34,4 +34,8 @@ Veil.Analytics.Worker.Internal.IngestEndpoints.Map(app);
 app.MapHealthChecks("/healthz", new() { Predicate = _ => false });
 app.MapHealthChecks("/readyz", new() { Predicate = check => check.Tags.Contains("ready") });
 
+// Prometheus scrape endpoint.
+app.MapGet("/metrics", (Veil.Shared.Observability.MetricsCollector metrics) =>
+    Results.Text(metrics.Render(), "text/plain; version=0.0.4"));
+
 app.Run();

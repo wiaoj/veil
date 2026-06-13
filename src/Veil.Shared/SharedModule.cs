@@ -13,6 +13,7 @@ public sealed class SharedModule : IModule {
 
     public void Register(IServiceCollection services, IConfiguration configuration) {
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<Observability.MetricsCollector>();
 
         services.Configure<ObfuscationOptions>(configuration.GetSection(ObfuscationOptions.SectionName));
         services.AddSingleton<IObfuscator>(sp => new FeistelBase62Obfuscator(

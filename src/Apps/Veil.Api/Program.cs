@@ -109,6 +109,11 @@ app.MapHealthChecks("/readyz", new() {
     Predicate = check => check.Tags.Contains("ready")
 }).AllowAnonymous();
 
+// Prometheus scrape endpoint.
+app.MapGet("/metrics", (Veil.Shared.Observability.MetricsCollector metrics) =>
+        Results.Text(metrics.Render(), "text/plain; version=0.0.4"))
+   .AllowAnonymous();
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {

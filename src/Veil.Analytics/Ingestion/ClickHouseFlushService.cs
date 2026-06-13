@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Veil.Analytics.ClickHouse;
+using Veil.Shared.Observability;
 
 namespace Veil.Analytics.Ingestion;
 
@@ -12,7 +13,11 @@ namespace Veil.Analytics.Ingestion;
 public sealed class ClickHouseFlushService(
     RequestLogQueue queue,
     ClickHouseWriter writer,
+    MetricsCollector metrics,
     ILogger<ClickHouseFlushService> logger) : BackgroundService {
+
+    private const string RowsWritten = "veil_clickhouse_rows_written_total";
+    private const string WriteFailures = "veil_clickhouse_write_failures_total";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
         await EnsureSchemaAsync(stoppingToken);
@@ -20,12 +25,14 @@ public sealed class ClickHouseFlushService(
         await foreach(IReadOnlyList<RequestLogRow> batch in queue.ReadAllAsync(stoppingToken)) {
             try {
                 await writer.InsertAsync(batch, stoppingToken);
+                metrics.IncrementCounter(RowsWritten, "Request log rows written to ClickHouse.", batch.Count);
                 logger.LogDebug("Flushed {Count} request log rows to ClickHouse", batch.Count);
             }
             catch(OperationCanceledException) when(stoppingToken.IsCancellationRequested) {
                 throw;
             }
             catch(Exception ex) {
+                metrics.IncrementCounter(WriteFailures, "ClickHouse insert failures (dropped batches).");
                 logger.LogWarning(ex, "Dropped {Count} request log rows: ClickHouse insert failed", batch.Count);
             }
         }

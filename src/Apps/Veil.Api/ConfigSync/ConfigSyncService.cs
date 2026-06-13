@@ -37,8 +37,11 @@ public sealed class ConfigSyncService(
     IObfuscator<RuleId> ruleObfuscator,
     IHttpClientFactory httpClientFactory,
     TimeProvider timeProvider,
+    Veil.Shared.Observability.MetricsCollector metrics,
     IOptions<ConfigSyncOptions> options,
     ILogger<ConfigSyncService> logger) : BackgroundService {
+
+    private const string PushTotal = "veil_config_push_total";
 
     public const string HttpClientName = "edge-push";
 
@@ -130,6 +133,9 @@ public sealed class ConfigSyncService(
             nodesDb.ConfigPushLogs.Add(ConfigPushLog.Record(
                 node.Id, succeeded, Truncate(error, 2048), timeProvider.GetUtcNow()));
             wroteLog = true;
+
+            metrics.IncrementCounter(PushTotal, "Config push attempts to edge nodes, by result.",
+                labels: ("result", succeeded ? "success" : "failure"));
 
             if(succeeded) {
                 this._lastPushedHash[nodeKey] = snapshotHash;
