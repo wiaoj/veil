@@ -19,11 +19,19 @@ builder.Services.AddDbContextFactory<EdgeNodesDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 builder.Services.AddSingleton<Veil.EdgeNodes.Contracts.IEdgeNodeTokenVerifier, Veil.EdgeNodes.EdgeNodeTokenVerifier>();
 
+// Health: /healthz liveness, /readyz adds a PostgreSQL reachability probe.
+builder.Services.AddHealthChecks()
+    .AddCheck<Veil.Analytics.Worker.Health.DbReadinessHealthCheck<EdgeNodesDbContext>>(
+        "database", tags: ["ready"]);
+
 var app = builder.Build();
 
 await app.UseModulithAsync();
 
 // Edge → control plane log ingestion (node-token authenticated).
 Veil.Analytics.Worker.Internal.IngestEndpoints.Map(app);
+
+app.MapHealthChecks("/healthz", new() { Predicate = _ => false });
+app.MapHealthChecks("/readyz", new() { Predicate = check => check.Tags.Contains("ready") });
 
 app.Run();

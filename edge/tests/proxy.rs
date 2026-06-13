@@ -530,3 +530,31 @@ async fn acme_push_then_http01_served_before_rules() {
     let response = get(&client, proxy, "/.well-known/acme-challenge/tok").await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn health_probes_respond_without_zone_resolution() {
+    let upstream = spawn_upstream().await;
+    let proxy = spawn_proxy(upstream).await;
+    let client = client();
+
+    // Both liveness and readiness are green: spawn_proxy loads a zone.
+    let response = get(&client, proxy, "/healthz").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = get(&client, proxy, "/readyz").await;
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn readyz_unavailable_without_zones() {
+    let config = Config::from_json(r#"{"zones": []}"#).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(proxy::serve(listener, Arc::new(AppState::new(config))));
+    let client = client();
+
+    // Liveness is still green; readiness reports no servable config.
+    let response = get(&client, addr, "/healthz").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = get(&client, addr, "/readyz").await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+}

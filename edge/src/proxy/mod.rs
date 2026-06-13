@@ -204,6 +204,16 @@ pub async fn handle(
     let config = state.config.load();
     let ctx = inspector::inspect(&req, peer, config.trust_forwarded_headers);
 
+    // ── Reserved paths: health probes (no zone resolution / logging) ──
+    if req.method() == Method::GET && (ctx.path == "/healthz" || ctx.path == "/readyz") {
+        // Liveness: the listener is accepting. Readiness: a config with at
+        // least one zone is loaded (a node with no zones can serve nothing).
+        if ctx.path == "/healthz" || !config.zones.is_empty() {
+            return text(StatusCode::OK, "ok\n");
+        }
+        return text(StatusCode::SERVICE_UNAVAILABLE, "no config\n");
+    }
+
     // ── Reserved path: PoW challenge verification ─────────────────────
     if ctx.path == CHALLENGE_VERIFY_PATH && req.method() == Method::POST {
         return handle_challenge_verify(req, &ctx, &state).await;

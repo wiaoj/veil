@@ -86,6 +86,12 @@ builder.Services.AddHostedService<ConfigSyncService>();
 builder.Services.AddSingleton<Veil.Api.Acme.EdgeChallengePublisher>();
 builder.Services.AddHostedService<Veil.Api.Acme.AcmeProvisioningService>();
 
+// Health: /healthz is liveness (process up), /readyz adds a DB reachability
+// probe tagged "ready".
+builder.Services.AddHealthChecks()
+    .AddCheck<Veil.Api.Health.DbReadinessHealthCheck<Veil.Zones.Infrastructure.Persistence.ZonesDbContext>>(
+        "database", tags: ["ready"]);
+
 
 var app = builder.Build();
 
@@ -93,6 +99,15 @@ await app.UseModulithAsync();
 
 // Internal control-plane → edge endpoints (node-token authenticated).
 Veil.Api.Internal.EdgeConfigEndpoints.Map(app);
+
+// Liveness vs readiness — both bypass the fallback auth policy so probes
+// work without credentials.
+app.MapHealthChecks("/healthz", new() {
+    Predicate = _ => false
+}).AllowAnonymous();
+app.MapHealthChecks("/readyz", new() {
+    Predicate = check => check.Tags.Contains("ready")
+}).AllowAnonymous();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

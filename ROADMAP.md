@@ -243,7 +243,7 @@
 
 - [ ] Prometheus metrics — edge (RPS, latency histograms, verdict counts)
 - [ ] Prometheus metrics — control plane (push rate, ClickHouse write rate)
-- [ ] Health check endpoints (`/healthz`, `/readyz`) on all HTTP services
+- [x] Health check endpoints (`/healthz` liveness, `/readyz` readiness) on all HTTP services — control plane + analytics worker probe PostgreSQL; edge readiness requires a loaded zone config
 - [ ] Graceful shutdown — drain in-flight requests
 - [ ] Integration test suite (Testcontainers — PostgreSQL, Redis, ClickHouse)
 - [ ] Edge load test baseline (`wrk2`) — validate 100k req/s target
