@@ -578,3 +578,39 @@ async fn metrics_endpoint_reports_request_counters() {
     assert!(text.contains("veil_requests_total{verdict=\"block\"} 1"));
     assert!(text.contains("veil_request_duration_seconds_count"));
 }
+
+#[tokio::test]
+async fn graceful_shutdown_drains_then_stops_accepting() {
+    use tokio::sync::watch;
+
+    let upstream = spawn_upstream().await;
+    let config = Config::from_json(&format!(
+        r#"{{"zones": [{{"name": "t", "hosts": ["*"], "upstream": "http://{upstream}", "rules": []}}]}}"#
+    ))
+    .unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (tx, mut rx) = watch::channel(false);
+    let server = tokio::spawn(async move {
+        proxy::serve_with_shutdown(listener, Arc::new(AppState::new(config)), async move {
+            let _ = rx.changed().await;
+        })
+        .await
+    });
+
+    let client = client();
+    // In-flight request before shutdown succeeds.
+    assert_eq!(get(&client, addr, "/ok").await.status(), StatusCode::OK);
+
+    // Signal shutdown; the serve future returns once drained.
+    tx.send(true).unwrap();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), server)
+        .await
+        .expect("serve did not return after shutdown");
+    assert!(result.unwrap().is_ok());
+
+    // The listener is dropped, so new connections are refused.
+    let refused = client.get(format!("http://{addr}/ok").parse().unwrap()).await;
+    assert!(refused.is_err(), "listener should be closed after shutdown");
+}

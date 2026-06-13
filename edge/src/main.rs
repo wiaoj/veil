@@ -55,13 +55,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = Arc::new(state);
 
+    // Broadcast a single shutdown signal (Ctrl-C / SIGTERM) to every
+    // listener so both drain their in-flight connections.
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        let _ = shutdown_tx.send(true);
+    });
+
     if let Some((listen_addr, resolver)) = tls_setup {
         let acceptor = veil_edge::tls::build_resolver_acceptor(resolver);
         let tls_listener = TcpListener::bind(&listen_addr).await?;
         info!(addr = %listen_addr, "veil-edge listening (https)");
         let tls_state = Arc::clone(&state);
+        let mut tls_shutdown = shutdown_rx.clone();
         tokio::spawn(async move {
-            if let Err(err) = proxy::serve_tls(tls_listener, acceptor, tls_state).await {
+            let signal = async move {
+                let _ = tls_shutdown.changed().await;
+            };
+            if let Err(err) = proxy::serve_tls(tls_listener, acceptor, tls_state, signal).await {
                 warn!(error = %err, "https listener terminated");
             }
         });
@@ -75,8 +87,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(analytics::shipper::run(buffer, settings));
     }
 
-    proxy::serve(listener, state).await?;
+    let mut http_shutdown = shutdown_rx;
+    proxy::serve_with_shutdown(listener, state, async move {
+        let _ = http_shutdown.changed().await;
+    })
+    .await?;
+
+    info!("veil-edge stopped");
     Ok(())
+}
+
+/// Resolves when the process receives Ctrl-C or (on Unix) SIGTERM.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+
+    #[cfg(unix)]
+    {
+        let mut term = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
+            Ok(s) => s,
+            Err(_) => {
+                ctrl_c.await;
+                return;
+            }
+        };
+        tokio::select! {
+            () = ctrl_c => {},
+            _ = term.recv() => {},
+        }
+    }
+
+    #[cfg(not(unix))]
+    ctrl_c.await;
 }
 
 /// Two explicit modes, no crossover:

@@ -139,59 +139,109 @@ fn push_key_from_env() -> Option<[u8; 32]> {
     }
 }
 
-/// Accept loop. Each connection gets its own task; HTTP/1.1 and HTTP/2 are
-/// negotiated automatically.
+/// Maximum time to wait for in-flight requests to finish after a shutdown
+/// signal before forcing exit.
+const DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Accept loop without graceful shutdown — used by tests, which drop the
+/// runtime to stop the listener.
 pub async fn serve(listener: TcpListener, state: Arc<AppState>) -> std::io::Result<()> {
-    loop {
-        let (stream, peer) = listener.accept().await?;
-        let state = Arc::clone(&state);
-        tokio::spawn(async move {
-            let io = TokioIo::new(stream);
-            let service = service_fn(move |req| {
-                let state = Arc::clone(&state);
-                async move { Ok::<_, Infallible>(handle(req, peer, state).await) }
-            });
-            if let Err(err) = auto::Builder::new(TokioExecutor::new())
-                .serve_connection_with_upgrades(io, service)
-                .await
-            {
-                debug!(%peer, error = %err, "connection closed with error");
-            }
-        });
-    }
+    serve_with_shutdown(listener, state, std::future::pending::<()>()).await
 }
 
-/// TLS accept loop: same per-connection handling as [`serve`], with a TLS
-/// handshake in front. A failed handshake only costs that connection.
+/// Accept loop with graceful drain. Stops accepting on `shutdown`, then waits
+/// up to [`DRAIN_TIMEOUT`] for in-flight connections to complete. HTTP/1.1
+/// and HTTP/2 are negotiated automatically.
+pub async fn serve_with_shutdown(
+    listener: TcpListener,
+    state: Arc<AppState>,
+    shutdown: impl std::future::Future<Output = ()>,
+) -> std::io::Result<()> {
+    let graceful = hyper_util::server::graceful::GracefulShutdown::new();
+    let builder = auto::Builder::new(TokioExecutor::new());
+    let mut shutdown = std::pin::pin!(shutdown);
+
+    loop {
+        tokio::select! {
+            accepted = listener.accept() => {
+                let (stream, peer) = accepted?;
+                let state = Arc::clone(&state);
+                let service = service_fn(move |req| {
+                    let state = Arc::clone(&state);
+                    async move { Ok::<_, Infallible>(handle(req, peer, state).await) }
+                });
+                let conn = builder.serve_connection_with_upgrades(TokioIo::new(stream), service);
+                let conn = graceful.watch(conn.into_owned());
+                tokio::spawn(async move {
+                    if let Err(err) = conn.await {
+                        debug!(%peer, error = %err, "connection closed with error");
+                    }
+                });
+            }
+            () = &mut shutdown => break,
+        }
+    }
+
+    drain(graceful).await;
+    Ok(())
+}
+
+/// TLS accept loop with graceful drain: same handling as
+/// [`serve_with_shutdown`], with a TLS handshake in front. A failed handshake
+/// only costs that connection.
 pub async fn serve_tls(
     listener: TcpListener,
     acceptor: tokio_rustls::TlsAcceptor,
     state: Arc<AppState>,
+    shutdown: impl std::future::Future<Output = ()>,
 ) -> std::io::Result<()> {
+    let graceful = hyper_util::server::graceful::GracefulShutdown::new();
+    let builder = auto::Builder::new(TokioExecutor::new());
+    let mut shutdown = std::pin::pin!(shutdown);
+
     loop {
-        let (stream, peer) = listener.accept().await?;
-        let acceptor = acceptor.clone();
-        let state = Arc::clone(&state);
-        tokio::spawn(async move {
-            let tls_stream = match acceptor.accept(stream).await {
-                Ok(s) => s,
-                Err(err) => {
-                    debug!(%peer, error = %err, "tls handshake failed");
-                    return;
-                }
-            };
-            let io = TokioIo::new(tls_stream);
-            let service = service_fn(move |req| {
+        tokio::select! {
+            accepted = listener.accept() => {
+                let (stream, peer) = accepted?;
+                let acceptor = acceptor.clone();
                 let state = Arc::clone(&state);
-                async move { Ok::<_, Infallible>(handle(req, peer, state).await) }
-            });
-            if let Err(err) = auto::Builder::new(TokioExecutor::new())
-                .serve_connection_with_upgrades(io, service)
-                .await
-            {
-                debug!(%peer, error = %err, "tls connection closed with error");
+                // Handshake inline; a failed handshake only costs this
+                // connection. Watched connections are tracked for draining.
+                let tls_stream = match acceptor.accept(stream).await {
+                    Ok(s) => s,
+                    Err(err) => {
+                        debug!(%peer, error = %err, "tls handshake failed");
+                        continue;
+                    }
+                };
+                let service = service_fn(move |req| {
+                    let state = Arc::clone(&state);
+                    async move { Ok::<_, Infallible>(handle(req, peer, state).await) }
+                });
+                let conn = builder.serve_connection_with_upgrades(TokioIo::new(tls_stream), service);
+                let conn = graceful.watch(conn.into_owned());
+                tokio::spawn(async move {
+                    if let Err(err) = conn.await {
+                        debug!(%peer, error = %err, "tls connection closed with error");
+                    }
+                });
             }
-        });
+            () = &mut shutdown => break,
+        }
+    }
+
+    drain(graceful).await;
+    Ok(())
+}
+
+/// Waits for tracked connections to finish, bounded by [`DRAIN_TIMEOUT`].
+async fn drain(graceful: hyper_util::server::graceful::GracefulShutdown) {
+    info!("shutdown signalled; draining in-flight connections");
+    tokio::select! {
+        () = graceful.shutdown() => info!("all connections drained"),
+        () = tokio::time::sleep(DRAIN_TIMEOUT) => {
+            warn!(timeout_secs = DRAIN_TIMEOUT.as_secs(), "drain timed out; forcing shutdown");
+        }
     }
 }
 

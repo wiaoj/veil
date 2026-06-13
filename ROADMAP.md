@@ -244,7 +244,7 @@
 - [x] Prometheus metrics — edge (`GET /metrics`): `veil_requests_total{verdict}`, `veil_request_duration_seconds` histogram, `veil_upstream_errors_total` — dependency-free atomics
 - [x] Prometheus metrics — control plane (`GET /metrics`): `veil_config_push_total{result}` (Veil.Api), `veil_clickhouse_rows_written_total` + `veil_clickhouse_write_failures_total` (worker) — shared dependency-free `MetricsCollector` in Veil.Shared
 - [x] Health check endpoints (`/healthz` liveness, `/readyz` readiness) on all HTTP services — control plane + analytics worker probe PostgreSQL; edge readiness requires a loaded zone config
-- [ ] Graceful shutdown — drain in-flight requests
+- [x] Graceful shutdown — drain in-flight requests (edge: Ctrl-C/SIGTERM → stop accepting → `GracefulShutdown` drain, 30s cap, both HTTP + TLS listeners; .NET services drain via the generic host by default)
 - [ ] Integration test suite (Testcontainers — PostgreSQL, Redis, ClickHouse)
 - [ ] Edge load test baseline (`wrk2`) — validate 100k req/s target
 
