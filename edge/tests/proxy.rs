@@ -145,8 +145,18 @@ async fn challenge_blocks_then_passes_with_cookie() {
     let proxy = spawn_proxy(upstream).await;
     let client = client();
 
-    // First visit: interstitial with the nonce embedded in the JS.
-    let response = get(&client, proxy, "/login").await;
+    // First visit: interstitial with the nonce embedded in the JS. Send
+    // browser-like headers so the risk score is 0 and the difficulty stays
+    // at the base (Phase 4.2 scales it up for suspicious fingerprints).
+    let challenge_req = Request::builder()
+        .uri(format!("http://{proxy}/login"))
+        .header(hyper::header::USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; rv:130.0)")
+        .header(hyper::header::ACCEPT, "text/html")
+        .header(hyper::header::ACCEPT_LANGUAGE, "en-US")
+        .header(hyper::header::ACCEPT_ENCODING, "gzip")
+        .body(Empty::<Bytes>::new())
+        .unwrap();
+    let response = client.request(challenge_req).await.unwrap();
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert!(response.headers().get(SET_COOKIE).is_none(), "token is not set directly anymore");
 
@@ -159,19 +169,20 @@ async fn challenge_blocks_then_passes_with_cookie() {
         .expect("challenge page must embed the nonce");
 
     let nonce_bytes = veil_edge::challenge::pow::from_hex(nonce).unwrap();
-    
-    // Solve the PoW (default difficulty 20 is too slow for tests, but we can brute-force 
-    // it since it's just a test, or we should maybe set the env var for difficulty in proxy spawn...
-    // Let's just brute-force it, it takes ~50ms usually. Wait, default is 20. 
-    // Actually, in test AppState::new(), difficulty uses env var VEIL_POW_DIFFICULTY or 20.
-    // If it takes too long in tests, we could inject a lower difficulty. Let's just solve it.)
-    // Wait, the difficulty is read from env var inside AppState::new(). We can set it to 8 for the test.
-    // However, since we don't want to mess with env vars globally here in async test, we'll just solve it.
-    // Let's see if we can find it quickly. If it takes too long we will fix the env var.
-    // Actually, in `spawn_proxy` we don't set the env var, so it's 20. 20 means ~1 million iterations.
-    // In Rust debug mode, 1M SHA256 might take 1-2 seconds.
+
+    // Solve at the difficulty the page embeds (base 20 here, since the
+    // request scored risk 0). Parsing it keeps the test honest if the base
+    // or risk scaling changes.
+    let difficulty: u32 = html
+        .split("var DIFFICULTY = ")
+        .nth(1)
+        .and_then(|s| s.split(';').next())
+        .and_then(|s| s.trim().parse().ok())
+        .expect("challenge page must embed the difficulty");
+    assert_eq!(difficulty, 20, "browser-like request should not be risk-scaled");
+
     let mut counter = 0;
-    while !veil_edge::challenge::pow::verify_pow(&nonce_bytes, counter, 20) {
+    while !veil_edge::challenge::pow::verify_pow(&nonce_bytes, counter, difficulty) {
         counter += 1;
     }
 

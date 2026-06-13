@@ -13,6 +13,7 @@
 
 pub mod nonce_store;
 pub mod pow;
+pub mod risk;
 
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -118,18 +119,24 @@ impl ChallengeEngine {
 
     // ── Challenge issuance ────────────────────────────────────────────
 
-    /// Generate a nonce and return the challenge page HTML.
-    pub fn issue_challenge(&self, _client_ip: IpAddr) -> Response<ProxyBody> {
+    /// Generate a nonce and return the challenge page HTML. The PoW
+    /// difficulty is scaled by the request's risk score (Phase 4.2) and
+    /// bound to the nonce, so a client cannot solve below the level it was
+    /// served.
+    pub fn issue_challenge(&self, ctx: &crate::pipeline::RequestContext) -> Response<ProxyBody> {
+        let risk = risk::score(ctx);
+        let difficulty = risk::difficulty_for(self.difficulty, risk);
+
         let nonce = pow::generate_nonce();
         let nonce_hex = to_hex(&nonce);
 
-        // Track the nonce for replay protection
-        self.nonce_store.insert(&nonce_hex);
+        // Track the nonce (replay protection) together with its difficulty.
+        self.nonce_store.insert(&nonce_hex, difficulty);
 
         let body = TEMPLATE_HTML
             .replace("{logo_svg}", LOGO_SVG)
             .replace("{nonce}", &nonce_hex)
-            .replace("{difficulty}", &self.difficulty.to_string());
+            .replace("{difficulty}", &difficulty.to_string());
 
         html(StatusCode::SERVICE_UNAVAILABLE, body)
     }
@@ -144,13 +151,14 @@ impl ChallengeEngine {
         solution: &VerifySolutionRequest,
         client_ip: IpAddr,
     ) -> Response<ProxyBody> {
-        // 1. Check nonce is pending (replay protection)
-        if !self.nonce_store.contains(&solution.nonce) {
+        // 1. Check nonce is pending (replay protection) and recover the
+        //    difficulty it was issued at.
+        let Some(required_difficulty) = self.nonce_store.difficulty(&solution.nonce) else {
             return json_response(
                 StatusCode::FORBIDDEN,
                 r#"{"error":"unknown_nonce","detail":"Nonce bilinmiyor veya süresi dolmuş."}"#,
             );
-        }
+        };
 
         // 2. Decode nonce and counter
         let Some(nonce_bytes) = from_hex(&solution.nonce) else {
@@ -166,8 +174,8 @@ impl ChallengeEngine {
             );
         };
 
-        // 3. Verify the PoW
-        if !pow::verify_pow(&nonce_bytes, counter, self.difficulty) {
+        // 3. Verify the PoW at the difficulty bound to this nonce
+        if !pow::verify_pow(&nonce_bytes, counter, required_difficulty) {
             return json_response(
                 StatusCode::FORBIDDEN,
                 r#"{"error":"invalid_solution","detail":"PoW çözümü geçersiz."}"#,

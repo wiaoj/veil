@@ -326,7 +326,7 @@ pub async fn handle(
                 label = "challenge_pass";
                 forward_or_502(req, &ctx, &zone.upstream, &state).await
             } else {
-                state.challenge.issue_challenge(ctx.client_ip)
+                state.challenge.issue_challenge(&ctx)
             }
         }
         Verdict::Block { .. } => forbidden(ctx.wants_html()),

@@ -16,6 +16,17 @@ fn other_ip() -> IpAddr {
     "198.51.100.1".parse().unwrap()
 }
 
+fn ctx() -> crate::pipeline::RequestContext {
+    crate::pipeline::RequestContext {
+        client_ip: ip(),
+        host: "example.com".to_owned(),
+        method: hyper::Method::GET,
+        path: "/".to_owned(),
+        user_agent: Some("Mozilla/5.0".to_owned()),
+        headers: HeaderMap::new(),
+    }
+}
+
 fn test_engine() -> ChallengeEngine {
     let hmac_key = [0xABu8; 32];
     let store = Arc::new(InMemoryNonceStore::new(Duration::from_secs(60)));
@@ -80,14 +91,14 @@ fn verify_solution_accepts_valid_pow() {
     let engine = test_engine();
 
     // Generate a nonce via issue_challenge (which inserts it into the store)
-    let response = engine.issue_challenge(ip());
+    let response = engine.issue_challenge(&ctx());
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 
     // Extract nonce from the nonce store — we need to brute-force a solution
     // For testing, let's manually insert a known nonce and solve it
     let nonce = pow::generate_nonce();
     let nonce_hex = pow::to_hex(&nonce);
-    engine.nonce_store.insert(&nonce_hex);
+    engine.nonce_store.insert(&nonce_hex, 8);
 
     // Find a valid solution at difficulty 8
     let counter = (0..100_000u64)
@@ -108,7 +119,7 @@ fn verify_solution_rejects_wrong_counter() {
     let engine = test_engine();
     let nonce = pow::generate_nonce();
     let nonce_hex = pow::to_hex(&nonce);
-    engine.nonce_store.insert(&nonce_hex);
+    engine.nonce_store.insert(&nonce_hex, 8);
 
     let solution = VerifySolutionRequest {
         nonce: nonce_hex,
@@ -136,7 +147,7 @@ fn verify_solution_prevents_nonce_replay() {
     let engine = test_engine();
     let nonce = pow::generate_nonce();
     let nonce_hex = pow::to_hex(&nonce);
-    engine.nonce_store.insert(&nonce_hex);
+    engine.nonce_store.insert(&nonce_hex, 8);
 
     let counter = (0..100_000u64)
         .find(|&c| pow::verify_pow(&nonce, c, 8))
@@ -165,6 +176,6 @@ fn verify_solution_prevents_nonce_replay() {
 #[test]
 fn issue_challenge_returns_503_with_nonce() {
     let engine = test_engine();
-    let response = engine.issue_challenge(ip());
+    let response = engine.issue_challenge(&ctx());
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 }

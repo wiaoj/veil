@@ -149,7 +149,7 @@
 - [x] Web Worker — WASM solver, posts result to main thread
 - [x] `/_veil/challenge/verify` endpoint
 - [x] Nonce deduplication (In-Memory implemented, pending Redis)
-- [ ] Risk score evaluation (ASN, header fingerprint, timing)
+- [x] Risk score evaluation — header-fingerprint heuristic (`challenge/risk.rs`, 0–100) scales PoW difficulty per request, bound to the nonce so it can't be solved below the issued level. ASN/timing inputs deferred to the pending GeoIP MMDB lookup.
 - [x] Challenge token issuance (HMAC-SHA256, HttpOnly Secure cookie, 10min TTL)
 - [x] Token verification on subsequent requests (in-process)
 
