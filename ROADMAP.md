@@ -193,7 +193,7 @@
 - [x] Batch validation + enrichment (length caps, clock-drift clamp, node id stamping)
 - [x] ClickHouse bulk insert (`INSERT FORMAT JSONEachRow`, schema ensured at startup)
 - [x] Fire-and-forget — drop on outage, log metric
-- [ ] Nightly aggregation → daily summary into PostgreSQL
+- [x] Nightly aggregation → daily summary into PostgreSQL — `DailyAggregationService` rolls up ClickHouse verdict counts per zone/day into `analytics.daily_summary` (raw Npgsql, idempotent upsert), runs 00:30 UTC + startup catch-up, re-aggregates a 2-day trailing window for late rows
 
 ### 6.2 Veil.Analytics — Query model & Application
 > No EF read model — `ClickHouseReader` queries the HTTP interface directly

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Veil.Analytics.Aggregation;
 using Veil.Analytics.ClickHouse;
 using Veil.Analytics.Ingestion;
 using Wiaoj.Modulith;
@@ -24,5 +25,15 @@ public sealed class AnalyticsModule : IModule {
         services.AddSingleton<ClickHouseWriter>();
         services.AddSingleton<RequestLogQueue>();
         services.AddHostedService<ClickHouseFlushService>();
+
+        // Nightly rollup: ClickHouse → PostgreSQL daily summary. Skipped when
+        // no PostgreSQL connection string is configured (e.g. CH-only test
+        // setups) rather than crashing the worker at startup.
+        services.AddSingleton<ClickHouseReader>();
+        string? connectionString = configuration.GetConnectionString("Default");
+        if(!string.IsNullOrWhiteSpace(connectionString)) {
+            services.AddSingleton(new DailySummaryStore(connectionString));
+            services.AddHostedService<DailyAggregationService>();
+        }
     }
 }

@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Npgsql" Version="10.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\..\libraries\src\Endpoints\Wiaoj.Endpoints\Wiaoj.Endpoints.csproj" />
     <ProjectReference Include="..\..\..\libraries\src\Modulith\Wiaoj.Modulith.AspNetCore\Wiaoj.Modulith.AspNetCore.csproj" />
     <ProjectReference Include="..\Veil.Shared\Veil.Shared.csproj" />
