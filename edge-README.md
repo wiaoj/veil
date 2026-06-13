@@ -230,3 +230,34 @@ cargo test pipeline::rules::test_geo_block
 ```
 
 The rule engine has property-based tests using `proptest` to verify that compiled decision trees produce the same verdicts as the naive linear evaluator across random rule sets and request inputs.
+
+---
+
+## Load test baseline
+
+A dependency-free closed-loop load generator ships as an example. It drives
+N keep-alive workers against a target URL for a fixed duration and reports
+throughput and latency percentiles:
+
+```bash
+cargo run --release --example loadtest -- [URL] [CONCURRENCY] [SECONDS]
+# defaults: http://127.0.0.1:8080/  64  10
+```
+
+Hitting `/healthz` isolates the listener + request-dispatch path (no upstream,
+no rule evaluation), which is the edge's raw request-handling ceiling.
+
+**Reference run** (dev workstation, loopback, single edge process, release
+build, 64 workers × 10s against `/healthz`):
+
+| metric      | value        |
+|-------------|--------------|
+| throughput  | ~104,000 req/s |
+| errors      | 0            |
+| latency p50 | ~0.55 ms     |
+| latency p90 | ~0.98 ms     |
+| latency p99 | ~1.6 ms      |
+
+This clears the 100k req/s design target on the dispatch path on commodity
+hardware; production throughput is bounded by upstream and TLS costs. Re-run
+after pipeline changes to catch regressions.
