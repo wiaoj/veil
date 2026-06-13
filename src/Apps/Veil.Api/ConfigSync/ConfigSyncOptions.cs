@@ -23,4 +23,11 @@ public sealed record ConfigSyncOptions {
     /// Unset disables config sync entirely.
     /// </summary>
     public string? PushHmacKey { get; init; }
+
+    /// <summary>
+    /// StackExchange.Redis connection string. When set, ConfigSync runs with
+    /// Redis leader election (single active replica) and a backoff retry
+    /// queue; unset → single-instance local coordination.
+    /// </summary>
+    public string? RedisConnection { get; init; }
 }

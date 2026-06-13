@@ -38,10 +38,12 @@ public sealed class ConfigSyncService(
     IHttpClientFactory httpClientFactory,
     TimeProvider timeProvider,
     Veil.Shared.Observability.MetricsCollector metrics,
+    IPushCoordinator coordinator,
     IOptions<ConfigSyncOptions> options,
     ILogger<ConfigSyncService> logger) : BackgroundService {
 
     private const string PushTotal = "veil_config_push_total";
+    private static readonly TimeSpan NotLeaderPoll = TimeSpan.FromSeconds(10);
 
     public const string HttpClientName = "edge-push";
 
@@ -73,6 +75,14 @@ public sealed class ConfigSyncService(
             bool signalled = await WaitForChangeOrReconcileAsync(stoppingToken);
             if(stoppingToken.IsCancellationRequested) break;
 
+            // Only the elected leader pushes; standbys idle until they win
+            // the lock (e.g. the leader dies and its lease expires).
+            if(!await SafeIsLeaderAsync(stoppingToken)) {
+                try { await Task.Delay(NotLeaderPoll, stoppingToken); }
+                catch(OperationCanceledException) { break; }
+                continue;
+            }
+
             if(signalled) {
                 // Coalesce bursts (e.g. several rules edited in a row).
                 await Task.Delay(DebounceWindow, stoppingToken);
@@ -90,10 +100,32 @@ public sealed class ConfigSyncService(
         }
     }
 
-    /// <summary>True when woken by a change signal, false on a reconcile tick.</summary>
+    private async Task<bool> SafeIsLeaderAsync(CancellationToken stoppingToken) {
+        try {
+            return await coordinator.IsLeaderAsync(stoppingToken);
+        }
+        catch(Exception ex) {
+            // A Redis blip must not wedge the loop; treat as non-leader and
+            // retry on the next tick.
+            logger.LogWarning(ex, "Leader check failed; standing by");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Waits for a change signal, the reconcile interval, or the next due
+    /// retry (whichever comes first). Returns true when woken by a signal.
+    /// </summary>
     private async Task<bool> WaitForChangeOrReconcileAsync(CancellationToken stoppingToken) {
+        TimeSpan wait = ReconcileInterval;
+        TimeSpan? retryIn = null;
+        try { retryIn = await coordinator.TimeUntilNextRetryAsync(stoppingToken); }
+        catch(Exception ex) { logger.LogDebug(ex, "Retry-queue peek failed"); }
+        if(retryIn is { } due && due < wait)
+            wait = due;
+
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        timeout.CancelAfter(ReconcileInterval);
+        timeout.CancelAfter(wait);
         try {
             await signal.WaitAsync(timeout.Token);
             return true;
@@ -140,9 +172,11 @@ public sealed class ConfigSyncService(
             if(succeeded) {
                 this._lastPushedHash[nodeKey] = snapshotHash;
                 node.MarkSeen(timeProvider.GetUtcNow());
+                await coordinator.ClearRetryAsync(nodeKey, cancellationToken);
                 logger.LogInformation("Config pushed to edge node {Node} ({Address})", node.Name, node.Address);
             }
             else {
+                await coordinator.EnqueueRetryAsync(nodeKey, cancellationToken);
                 logger.LogWarning(
                     "Config push to edge node {Node} ({Address}) failed after {Attempts} attempts: {Error}",
                     node.Name, node.Address, RetryDelays.Length, error);

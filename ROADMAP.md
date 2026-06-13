@@ -131,9 +131,9 @@
 - [x] Zone config snapshot serialisation (shared with 3.1)
 - [x] HTTP POST to each registered edge node, HMAC-SHA256 signed body (`ConfigSync:PushHmacKey`); per-node snapshot-hash dedupe; 5-min reconcile pass
 - [x] Push result recorded in `config_push_log`
-- [ ] Redis retry queue (sorted set, next-attempt score)
+- [x] Redis retry queue (sorted set, next-attempt score) — `RedisPushCoordinator`, exponential backoff per node; loop wakes on the earliest due retry
 - [x] Exponential backoff, 3 retries per cycle (dead-letter comes with the Redis queue)
-- [ ] Redis leader election lock (single active instance in K8s)
+- [x] Redis leader election lock (single active instance in K8s) — `SET NX PX` lease + owner-checked renew; standbys idle until the lease expires
 
 ---
 

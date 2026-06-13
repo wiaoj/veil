@@ -79,6 +79,19 @@ builder.AddTyto(tyto => {
 // Config sync: pushes signed zone snapshots to edge nodes on change.
 builder.Services.AddSingleton<ConfigPushSignal>();
 builder.Services.AddSingleton<ZoneCertificateProvider>();
+
+// Multi-replica coordination: Redis leader election + retry queue when a
+// connection string is configured, otherwise single-instance local.
+string? configSyncRedis = builder.Configuration
+    .GetSection(ConfigSyncOptions.SectionName)["RedisConnection"];
+if(!string.IsNullOrWhiteSpace(configSyncRedis)) {
+    builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(
+        _ => StackExchange.Redis.ConnectionMultiplexer.Connect(configSyncRedis));
+    builder.Services.AddSingleton<IPushCoordinator, RedisPushCoordinator>();
+}
+else {
+    builder.Services.AddSingleton<IPushCoordinator, LocalPushCoordinator>();
+}
 builder.Services.Configure<ConfigSyncOptions>(
     builder.Configuration.GetSection(ConfigSyncOptions.SectionName));
 builder.Services.AddHttpClient(ConfigSyncService.HttpClientName,
