@@ -19,18 +19,8 @@ public sealed record ZoneSummaryResponse(
     string Status,
     int RuleCount);
 
-/// <summary>
-/// Paginated zone list.
-/// </summary>
-public sealed record ListZonesResponse(
-    List<ZoneSummaryResponse> Items,
-    int Page,
-    int PageSize,
-    int TotalCount);
-
 public sealed class ListZonesEndpoint : IEndpoint {
     private const int DefaultPageSize = 20;
-    private const int MaxPageSize = 100;
 
     public void Map(IEndpointRouteBuilder app) {
         app.MapGet("/v1/zones", Handle)
@@ -38,7 +28,7 @@ public sealed class ListZonesEndpoint : IEndpoint {
            .WithTags("Zones")
            .WithSummary("Lists zones")
            .WithDescription("Returns a paginated list of zones ordered by creation (snowflake id).")
-           .Produces<ListZonesResponse>(StatusCodes.Status200OK);
+           .Produces<PagedList<ZoneSummaryResponse>>(StatusCodes.Status200OK);
     }
 
     private static async Task<IHttpResult> Handle(
@@ -48,8 +38,7 @@ public sealed class ListZonesEndpoint : IEndpoint {
         int page = 1,
         int pageSize = DefaultPageSize) {
 
-        page = Math.Max(page, 1);
-        pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+        (page, pageSize) = PagedList<ZoneSummaryResponse>.Normalize(page, pageSize, DefaultPageSize);
 
         await using ZonesDbContext dbContext = await dbFactory.CreateDbContextAsync(cancellationToken);
 
@@ -76,6 +65,6 @@ public sealed class ListZonesEndpoint : IEndpoint {
                 z.RuleCount))
             .ToList();
 
-        return Results.Ok(new ListZonesResponse(items, page, pageSize, totalCount));
+        return Results.Ok(PagedList<ZoneSummaryResponse>.Create(items, page, pageSize, totalCount));
     }
 }

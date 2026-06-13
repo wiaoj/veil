@@ -11,8 +11,8 @@
 - [x] CI pipeline (GitHub Actions) — edge cargo test (+clippy advisory), full .NET solution build (checks out wiaoj/libraries sibling), dashboard bun build
 
 ### 1.2 Veil.Shared
-- [ ] `PagedList<T>` 
-- [ ] `ICurrentUser`
+- [x] `PagedList<T>` — shared pagination type with `Normalize`/`Create`; adopted by the Zones/EdgeNodes/Certificates list endpoints
+- [x] `ICurrentUser` — claims-projected principal (`HttpContextCurrentUser`), registered in Veil.Api
 - [x] Snowflake ID generator via Wiaoj.Primitives.Snowflake
 - [x] Prefixed + obfuscated ID helpers (prefix registry, Hashids encoding/decoding)
 - [x] `Wiaoj.Results` — `Result<T>` type, error types, Minimal API extension (`ToHttpResult()`)

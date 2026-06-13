@@ -23,18 +23,8 @@ public sealed record EdgeNodeSummaryResponse(
     bool? LastPushSucceeded,
     DateTimeOffset? LastPushAtUtc);
 
-/// <summary>
-/// Paginated edge node list.
-/// </summary>
-public sealed record ListEdgeNodesResponse(
-    List<EdgeNodeSummaryResponse> Items,
-    int Page,
-    int PageSize,
-    int TotalCount);
-
 public sealed class ListEdgeNodesEndpoint : IEndpoint {
     private const int DefaultPageSize = 20;
-    private const int MaxPageSize = 100;
 
     public void Map(IEndpointRouteBuilder app) {
         app.MapGet("/v1/edge-nodes", Handle)
@@ -42,7 +32,7 @@ public sealed class ListEdgeNodesEndpoint : IEndpoint {
            .WithTags("EdgeNodes")
            .WithSummary("Lists registered edge nodes")
            .WithDescription("Returns a paginated list of edge nodes ordered by registration (snowflake id).")
-           .Produces<ListEdgeNodesResponse>(StatusCodes.Status200OK);
+           .Produces<PagedList<EdgeNodeSummaryResponse>>(StatusCodes.Status200OK);
     }
 
     private static async Task<IHttpResult> Handle(
@@ -52,8 +42,7 @@ public sealed class ListEdgeNodesEndpoint : IEndpoint {
         int page = 1,
         int pageSize = DefaultPageSize) {
 
-        page = Math.Max(page, 1);
-        pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+        (page, pageSize) = PagedList<EdgeNodeSummaryResponse>.Normalize(page, pageSize, DefaultPageSize);
 
         await using EdgeNodesDbContext dbContext = await dbFactory.CreateDbContextAsync(cancellationToken);
 
@@ -91,6 +80,6 @@ public sealed class ListEdgeNodesEndpoint : IEndpoint {
                 n.LastPush?.PushedAtUtc))
             .ToList();
 
-        return Results.Ok(new ListEdgeNodesResponse(items, page, pageSize, totalCount));
+        return Results.Ok(PagedList<EdgeNodeSummaryResponse>.Create(items, page, pageSize, totalCount));
     }
 }

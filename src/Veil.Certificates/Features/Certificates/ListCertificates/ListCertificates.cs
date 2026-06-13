@@ -16,15 +16,8 @@ public sealed record CertificateSummaryResponse(
     DateTimeOffset RequestedAtUtc,
     DateTimeOffset? ExpiresAtUtc);
 
-public sealed record ListCertificatesResponse(
-    List<CertificateSummaryResponse> Items,
-    int Page,
-    int PageSize,
-    int TotalCount);
-
 public sealed class ListCertificatesEndpoint : IEndpoint {
     private const int DefaultPageSize = 20;
-    private const int MaxPageSize = 100;
 
     public void Map(IEndpointRouteBuilder app) {
         app.MapGet("/v1/certificates", Handle)
@@ -32,7 +25,7 @@ public sealed class ListCertificatesEndpoint : IEndpoint {
            .WithTags("Certificates")
            .WithSummary("Lists certificates")
            .WithDescription("Returns a paginated list of certificates ordered by request time (snowflake id).")
-           .Produces<ListCertificatesResponse>(StatusCodes.Status200OK);
+           .Produces<PagedList<CertificateSummaryResponse>>(StatusCodes.Status200OK);
     }
 
     private static async Task<IHttpResult> Handle(
@@ -42,8 +35,7 @@ public sealed class ListCertificatesEndpoint : IEndpoint {
         int page = 1,
         int pageSize = DefaultPageSize) {
 
-        page = Math.Max(page, 1);
-        pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+        (page, pageSize) = PagedList<CertificateSummaryResponse>.Normalize(page, pageSize, DefaultPageSize);
 
         await using CertificatesDbContext dbContext = await dbFactory.CreateDbContextAsync(cancellationToken);
 
@@ -72,6 +64,6 @@ public sealed class ListCertificatesEndpoint : IEndpoint {
                 c.ExpiresAtUtc))
             .ToList();
 
-        return Results.Ok(new ListCertificatesResponse(items, page, pageSize, totalCount));
+        return Results.Ok(PagedList<CertificateSummaryResponse>.Create(items, page, pageSize, totalCount));
     }
 }

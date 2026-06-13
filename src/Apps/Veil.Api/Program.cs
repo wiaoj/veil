@@ -36,6 +36,10 @@ builder.Services.AddModulith(builder.Configuration, builder.Environment, modules
 });
 builder.Services.AddModulithAspNetCore();
 
+// Current-user accessor over the request principal (JWT/API-key claims).
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<Veil.Shared.ICurrentUser, Veil.Shared.HttpContextCurrentUser>();
+
 // The Wiaoj.Ddd EF integration registers its dispatcher/interceptors scoped
 // (designed for AddDbContext); our contexts come from singleton factories,
 // so the whole chain must resolve from the root provider. Without this the
