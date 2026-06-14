@@ -332,3 +332,41 @@ export interface ConfigPushLogResponse {
   pageSize: number
   totalCount: number
 }
+
+// ── AI traffic analysis (Phase 11) ───────────────────────────────────
+
+export interface TrafficCount {
+  value: string
+  count: number
+}
+
+export interface SuggestedRule {
+  conditionType: string
+  value: string
+  action: string
+}
+
+export interface AnalystVerdict {
+  classification: string
+  confidence: number
+  summary: string
+  suggestedRule: SuggestedRule | null
+}
+
+export interface TrafficIncident {
+  id: string
+  detectedAtUtc: string
+  zone: string
+  anomalyScore: number
+  signals: Array<string>
+  ratePerSecond: number
+  baselineRatePerSecond: number
+  blockedRatio: number
+  distinctIps: number
+  topIps: Array<TrafficCount>
+  topPaths: Array<TrafficCount>
+  classification: string
+  suggestedRule: SuggestedRule | null
+  verdict: AnalystVerdict | null
+  action: string
+}

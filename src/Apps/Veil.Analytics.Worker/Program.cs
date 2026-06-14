@@ -6,6 +6,11 @@ using Veil.Shared.Observability;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Enums serialize as their string names (e.g. IncidentAction "Shadowed") so the
+// dashboard reads stable labels rather than ordinals.
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+
 builder.Services.AddModulith(builder.Configuration, builder.Environment, modules => {
     modules.AddModule<SharedModule>();
     modules.AddModule<AnalyticsModule>();
@@ -34,6 +39,12 @@ await app.UseModulithAsync();
 
 // Edge → control plane log ingestion (node-token authenticated).
 Veil.Analytics.Worker.Internal.IngestEndpoints.Map(app);
+
+// Live AI anomaly feed (Phase 11). Reads the process-local incident ring; empty
+// when intelligence is disabled. Prototype: unauthenticated on the worker port.
+app.MapGet("/intelligence/incidents",
+    (Veil.Analytics.Intelligence.IncidentStore store, int? limit) =>
+        Results.Ok(store.Recent(Math.Clamp(limit ?? 50, 1, 200))));
 
 app.MapHealthChecks("/healthz", new() { Predicate = _ => false });
 app.MapHealthChecks("/readyz", new() { Predicate = check => check.Tags.Contains("ready") });

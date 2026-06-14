@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Veil.Analytics.Aggregation;
 using Veil.Analytics.ClickHouse;
 using Veil.Analytics.Ingestion;
+using Veil.Analytics.Intelligence;
 using Veil.Analytics.Siem;
 using Wiaoj.Modulith;
 
@@ -36,6 +37,35 @@ public sealed class AnalyticsModule : IModule {
         }
         else {
             services.AddSingleton<ISiemExporter, NullSiemExporter>();
+        }
+
+        // Live AI traffic analysis (Phase 11). Opt-in: when disabled, a no-op
+        // analyzer is registered so the ingest hot path can resolve it cheaply
+        // and nothing else (timer, Claude client) is wired up.
+        services.Configure<IntelligenceOptions>(configuration.GetSection(IntelligenceOptions.SectionName));
+        IntelligenceOptions intelligence =
+            configuration.GetSection(IntelligenceOptions.SectionName).Get<IntelligenceOptions>() ?? new IntelligenceOptions();
+        services.AddSingleton<IncidentStore>(_ => new IncidentStore(intelligence.MaxIncidents));
+        if(intelligence.Enabled) {
+            // ML.NET spike detector (in-process; no external dependency). This is
+            // the detection brain — the LLM layer below is optional enrichment.
+            services.AddSingleton(_ => new MlAnomalyDetector(intelligence.MlConfidence, intelligence.MlMinHistory));
+            services.AddSingleton<ITrafficAnalyzer, TrafficAnalyzer>();
+
+            if(!string.IsNullOrWhiteSpace(intelligence.AnthropicApiKey)) {
+                services.AddHttpClient(AnthropicAnalystClient.HttpClientName,
+                    client => client.Timeout = TimeSpan.FromSeconds(30));
+                services.AddSingleton<IAnalystClient, AnthropicAnalystClient>();
+            }
+            else {
+                services.AddSingleton<IAnalystClient, NullAnalystClient>();
+            }
+
+            services.AddSingleton<IRuleApplier, LoggingRuleApplier>();
+            services.AddHostedService<TrafficAnalysisService>();
+        }
+        else {
+            services.AddSingleton<ITrafficAnalyzer, NullTrafficAnalyzer>();
         }
 
         // Nightly rollup: ClickHouse → PostgreSQL daily summary. Skipped when

@@ -289,3 +289,40 @@
 - [x] Log export to external SIEM — analytics worker mirrors each request-log batch as NDJSON to a configured SIEM endpoint (`Veil.Analytics/Siem`, `Siem:Endpoint`), fire-and-forget so a SIEM outage never back-pressures ingestion
 - [ ] Multi-tenant zone ownership (organisations, member roles) — large: org ownership across auth + all aggregates
 - [ ] Terraform provider — separate Go project
+
+---
+
+## Phase 11 — AI Traffic Analysis
+
+> Live, AI-assisted analysis of edge traffic. Runs entirely in the control
+> plane (never in the edge hot path) over the existing ClickHouse request log
+> + SSE stream. Read-only/advisory first; automated rule actions are opt-in and
+> gated behind shadow mode.
+
+> **Prototype landed** (in `Veil.Analytics`, namespace `Veil.Analytics.Intelligence`):
+> live in-memory anomaly detection off the ingest stream, using **ML.NET**
+> (in-process spike detection) as the detection brain — **no LLM required**.
+> Deterministic classification + suggested rule from the signals, with
+> shadow/enforce gating. The Claude triage layer is optional enrichment, off by
+> default. Opt-in via the `Intelligence` config section (`Enabled: false`).
+> Productionising = extract to a standalone `Veil.Intelligence` module and wire
+> `IRuleApplier` to Veil.Api.
+
+### 11.1 Foundation
+- [x] Intelligence layer — analyzer, incident store, background analysis loop, worker read endpoint (`GET /intelligence/incidents`). *(Lives in Veil.Analytics for the prototype; extract to `Veil.Intelligence` + `intelligence` schema for persistence later.)*
+- [x] LLM provider abstraction (`IAnalystClient`) — Claude via the Anthropic Messages API (`AnthropicAnalystClient`), configurable model + key, `NullAnalystClient` no-op when unconfigured
+- [x] Cost/rate guards — triage runs per *incident*, not per request; per-interval aggregation + cooldown summarise traffic before the model is ever called
+
+### 11.2 Live anomaly detection
+- [x] Rolling traffic-window features **in memory** off the live ingest stream (req rate, verdict mix, top IPs/paths, distinct IPs) per zone — no ClickHouse round-trip, so detection is instant. *(ASN/challenge-pass features deferred.)*
+- [x] **ML.NET** spike detection (`MlAnomalyDetector`, IID spike over the per-zone rate series) + deterministic attack signals (block ratio / single-source share) — always-on, in-process, no LLM
+- [x] Deterministic classification + suggested rule from the signals (single_source_flood / path_flood / http_flood / traffic_spike) — the ML-only path needs no LLM
+- [x] *(Optional)* LLM triage layer for natural-language classification + summary (`AnthropicAnalystClient`, structured outputs) — off by default, enriches the incident when an API key is set
+
+### 11.3 Insights & actions
+- [x] Natural-language attack summaries on each incident (surfaced via the incidents endpoint; dashboard wiring pending)
+- [x] Suggested WAF rule generation — model proposes condition + action; gated by confidence into **shadow** vs **enforce** (`IRuleApplier`; prototype logs the decision — wire to Veil.Api to close the loop)
+- [ ] Alerting — reuse the attack-webhook + SIEM path for AI-flagged events
+
+### 11.4 Dashboard
+- [ ] "Intelligence" view — live anomaly feed, per-incident detail, suggested-rule review/apply
