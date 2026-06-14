@@ -66,4 +66,16 @@ public sealed record IntelligenceOptions {
 
     /// <summary>Confidence (0..1) required to auto-enforce a rule rather than shadow it.</summary>
     public double AutoApplyMinConfidence { get; init; } = 0.9;
+
+    // --- Control plane (Veil.Api) for applying rules ---
+
+    /// <summary>Veil.Api base URL. When set with an API key, rules are really applied.</summary>
+    public string ControlPlaneUrl { get; init; } = "http://localhost:5210";
+
+    /// <summary>API key (X-Api-Key) for the control plane. Unset → applier only logs.</summary>
+    public string? ControlPlaneApiKey { get; init; }
+
+    /// <summary>Requests/window for an enforced rate_limit rule (the suggestion carries no numbers).</summary>
+    public int DefaultRateLimitRequests { get; init; } = 100;
+    public int DefaultRateLimitWindowSeconds { get; init; } = 60;
 }

@@ -321,8 +321,8 @@
 
 ### 11.3 Insights & actions
 - [x] Natural-language attack summaries on each incident (surfaced via the incidents endpoint; dashboard wiring pending)
-- [x] Suggested WAF rule generation — model proposes condition + action; gated by confidence into **shadow** vs **enforce** (`IRuleApplier`; prototype logs the decision — wire to Veil.Api to close the loop)
+- [x] Suggested WAF rule generation — condition + action; gated by confidence into **shadow** vs **enforce**. `HttpRuleApplier` calls Veil.Api (`POST /v1/zones/{id}/rules`, X-Api-Key): enforce → real action, shadow → `Log` action (per-rule observe-only). Falls back to `LoggingRuleApplier` when no API key set.
 - [ ] Alerting — reuse the attack-webhook + SIEM path for AI-flagged events
 
 ### 11.4 Dashboard
-- [ ] "Intelligence" view — live anomaly feed, per-incident detail, suggested-rule review/apply
+- [x] "Intelligence" view — live anomaly feed (`/intelligence` route, "Yapay zeka") reading `GET /v1/intelligence/incidents` (Veil.Api proxy → worker). Per-incident detail + suggested rule shown. *(Auto-refresh/SSE + one-click apply pending.)*

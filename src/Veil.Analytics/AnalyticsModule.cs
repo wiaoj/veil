@@ -61,7 +61,17 @@ public sealed class AnalyticsModule : IModule {
                 services.AddSingleton<IAnalystClient, NullAnalystClient>();
             }
 
-            services.AddSingleton<IRuleApplier, LoggingRuleApplier>();
+            // Real rule application calls Veil.Api; without an API key we only
+            // log the decision (the prototype default).
+            if(!string.IsNullOrWhiteSpace(intelligence.ControlPlaneApiKey)) {
+                services.AddHttpClient(HttpRuleApplier.HttpClientName,
+                    client => client.Timeout = TimeSpan.FromSeconds(10));
+                services.AddSingleton<IRuleApplier, HttpRuleApplier>();
+            }
+            else {
+                services.AddSingleton<IRuleApplier, LoggingRuleApplier>();
+            }
+
             services.AddHostedService<TrafficAnalysisService>();
         }
         else {
