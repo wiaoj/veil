@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Veil.Analytics.ClickHouse;
+using Veil.Analytics.Siem;
 using Veil.Shared.Observability;
 
 namespace Veil.Analytics.Ingestion;
@@ -13,6 +14,7 @@ namespace Veil.Analytics.Ingestion;
 public sealed class ClickHouseFlushService(
     RequestLogQueue queue,
     ClickHouseWriter writer,
+    ISiemExporter siemExporter,
     MetricsCollector metrics,
     ILogger<ClickHouseFlushService> logger) : BackgroundService {
 
@@ -23,6 +25,11 @@ public sealed class ClickHouseFlushService(
         await EnsureSchemaAsync(stoppingToken);
 
         await foreach(IReadOnlyList<RequestLogRow> batch in queue.ReadAllAsync(stoppingToken)) {
+            // Best-effort SIEM mirror, fire-and-forget so a slow/failing SIEM
+            // never back-pressures the ClickHouse path (the exporter swallows
+            // its own errors).
+            _ = siemExporter.ExportAsync(batch, stoppingToken);
+
             try {
                 await writer.InsertAsync(batch, stoppingToken);
                 metrics.IncrementCounter(RowsWritten, "Request log rows written to ClickHouse.", batch.Count);

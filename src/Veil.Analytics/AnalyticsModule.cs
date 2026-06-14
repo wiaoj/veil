@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Veil.Analytics.Aggregation;
 using Veil.Analytics.ClickHouse;
 using Veil.Analytics.Ingestion;
+using Veil.Analytics.Siem;
 using Wiaoj.Modulith;
 
 namespace Veil.Analytics;
@@ -25,6 +26,17 @@ public sealed class AnalyticsModule : IModule {
         services.AddSingleton<ClickHouseWriter>();
         services.AddSingleton<RequestLogQueue>();
         services.AddHostedService<ClickHouseFlushService>();
+
+        // Optional SIEM export (NDJSON over HTTP). Active only when configured.
+        services.Configure<SiemOptions>(configuration.GetSection(SiemOptions.SectionName));
+        string? siemEndpoint = configuration.GetSection(SiemOptions.SectionName)[nameof(SiemOptions.Endpoint)];
+        if(!string.IsNullOrWhiteSpace(siemEndpoint)) {
+            services.AddHttpClient(HttpSiemExporter.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
+            services.AddSingleton<ISiemExporter, HttpSiemExporter>();
+        }
+        else {
+            services.AddSingleton<ISiemExporter, NullSiemExporter>();
+        }
 
         // Nightly rollup: ClickHouse → PostgreSQL daily summary. Skipped when
         // no PostgreSQL connection string is configured (e.g. CH-only test

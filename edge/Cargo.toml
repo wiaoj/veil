@@ -29,6 +29,8 @@ redis = { version = "0.27", default-features = false, features = ["tokio-comp", 
 # TLS termination (Phase 2.2)
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 rustls-pemfile = "2"
+# HTTPS client connector for outbound webhooks (Phase 10)
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "ring", "webpki-tokio"] }
 
 [dev-dependencies]
 rcgen = "0.13"

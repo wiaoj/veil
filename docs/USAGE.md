@@ -246,6 +246,13 @@ Active certs renew automatically within `Certificates:RenewBeforeDays` (30).
 - **Analytics** — edge ships request logs to the worker → ClickHouse; query via
   the control plane analytics endpoints, or watch the live SSE stream at
   `/v1/analytics/stream` (dashboard `/live`).
+- **SIEM export** — set `Siem:Endpoint` on the analytics worker to mirror every
+  request-log batch as NDJSON to an external SIEM (fire-and-forget; a SIEM
+  outage never affects ingestion).
+- **Attack webhooks** — set `VEIL_WEBHOOK_URL` on edge nodes to get a webhook
+  when enforced attack verdicts in a zone cross `VEIL_WEBHOOK_THRESHOLD` within
+  `VEIL_WEBHOOK_WINDOW_SECS`, then quiet for `VEIL_WEBHOOK_COOLDOWN_SECS`
+  (threshold+cooldown avoids flooding; optional HMAC signature).
 
 ---
 

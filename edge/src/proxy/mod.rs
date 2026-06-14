@@ -93,6 +93,8 @@ pub struct AppState {
     pub geo: Option<crate::geoip::GeoDb>,
     /// IP reputation denylist (`VEIL_IP_REPUTATION_PATH`). `None` when unset.
     pub reputation: Option<crate::reputation::IpReputation>,
+    /// Attack-threshold webhook notifier (`VEIL_WEBHOOK_URL`). `None` when unset.
+    pub webhook: Option<crate::webhook::WebhookNotifier>,
 }
 
 impl AppState {
@@ -106,6 +108,7 @@ impl AppState {
         state.analytics = analytics::buffer_from_env();
         state.geo = crate::geoip::GeoDb::from_env();
         state.reputation = crate::reputation::IpReputation::from_env();
+        state.webhook = crate::webhook::WebhookNotifier::from_env();
         state
     }
 
@@ -147,6 +150,7 @@ impl AppState {
             metrics: crate::metrics::Metrics::new(),
             geo: None,
             reputation: None,
+            webhook: None,
         }
     }
 }
@@ -474,6 +478,10 @@ pub async fn handle(
         "request"
     );
     state.metrics.record_request(label, started.elapsed().as_secs_f64());
+    if let Some(webhook) = &state.webhook {
+        // Enforced attack verdicts only; shadow_* and challenge_pass don't count.
+        webhook.record(&zone.name, label, ctx.client_ip);
+    }
     record_request(
         &state,
         &ctx,

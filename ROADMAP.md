@@ -285,7 +285,7 @@
 
 - [x] Shadow mode — per-zone `shadow` flag (`edge`): rules + managed signatures are evaluated and the would-be verdict is logged (`shadow_block`/`shadow_challenge`/`shadow_rate_limited`), but every request is forwarded. Zero-risk validation of a rule set against live traffic
 - [x] IP reputation feed integration — edge denylist of IPs/CIDRs from `VEIL_IP_REPUTATION_PATH` (`edge/src/reputation.rs`); checked after the zone's own rules so allow/block rules keep precedence. Matches block as `ip_reputation`
-- [ ] Webhook support (attack detection, challenge threshold breach) — design for threshold + cooldown to avoid amplification
-- [ ] Log export to external SIEM
+- [x] Webhook support (attack detection) — edge fires a single webhook when enforced attack verdicts in a zone cross a threshold within a window, then stays quiet for a cooldown (`edge/src/webhook.rs`, `VEIL_WEBHOOK_URL` + threshold/window/cooldown, optional HMAC). Threshold+cooldown design avoids amplifying an attack into an outbound flood
+- [x] Log export to external SIEM — analytics worker mirrors each request-log batch as NDJSON to a configured SIEM endpoint (`Veil.Analytics/Siem`, `Siem:Endpoint`), fire-and-forget so a SIEM outage never back-pressures ingestion
 - [ ] Multi-tenant zone ownership (organisations, member roles) — large: org ownership across auth + all aggregates
 - [ ] Terraform provider — separate Go project
