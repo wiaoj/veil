@@ -7,6 +7,7 @@ using Veil.Api.ConfigSync;
 using Veil.EdgeNodes;
 using Veil.EdgeNodes.Contracts.IntegrationEvents;
 using Veil.Shared;
+using Veil.Shared.Observability;
 using Veil.Zones;
 using Veil.Zones.Contracts.IntegrationEvents;
 using Wiaoj.Serialization;
@@ -35,6 +36,9 @@ builder.Services.AddModulith(builder.Configuration, builder.Environment, modules
     modules.AddModule<Veil.Analytics.AnalyticsQueryModule>();
 });
 builder.Services.AddModulithAspNetCore();
+
+// OpenTelemetry tracing + metrics (opt-in via OTEL_EXPORTER_OTLP_ENDPOINT).
+builder.Services.AddVeilTelemetry(builder.Configuration, "veil-api");
 
 // Current-user accessor over the request principal (JWT/API-key claims).
 builder.Services.AddHttpContextAccessor();

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using Veil.Auth.Audit;
 using Veil.Auth.Domain;
 using Veil.Auth.Domain.ValueObjects;
 using Veil.Auth.Infrastructure.Persistence;
@@ -45,6 +46,8 @@ public sealed class CreateApiKeyEndpoint : IEndpoint {
         IObfuscator<UserId> userObfuscator,
         IObfuscator<ApiKeyId> keyObfuscator,
         TimeProvider timeProvider,
+        IAuditLogger audit,
+        HttpContext httpContext,
         CancellationToken cancellationToken) {
 
         // Keys are minted by humans: the creator comes from the JWT subject.
@@ -66,6 +69,16 @@ public sealed class CreateApiKeyEndpoint : IEndpoint {
         await db.SaveChangesAsync(cancellationToken);
 
         string encodedId = keyObfuscator.Encode(apiKey.Value.Id);
+
+        await audit.WriteAsync(
+            AuditActions.ApiKeyCreated,
+            AuditOutcome.Success,
+            actor: subject,
+            actorIp: httpContext.Connection.RemoteIpAddress?.ToString(),
+            target: encodedId,
+            detail: apiKey.Value.Name,
+            cancellationToken: cancellationToken);
+
         return Results.Created($"/v1/api-keys/{encodedId}", new CreateApiKeyResponse(
             encodedId,
             apiKey.Value.Name,

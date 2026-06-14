@@ -7,7 +7,7 @@
 ### 1.1 Repository & Tooling
 - [x] Solution structure: `Veil.sln`, module projects, `Apps/` projects
 - [x] `docker-compose.yml` — PostgreSQL, Redis (3 instances: rate-limit, tokens, config), ClickHouse
-- [ ] `.env.example` with all required variables (edge done, control plane pending)
+- [x] `.env.example` with all required variables — root template for the control plane (.NET `Section__Key` env convention; Api/ConfigSync/Certificates/Analytics) + refreshed `edge/.env.example`
 - [x] CI pipeline (GitHub Actions) — edge cargo test (+clippy advisory), full .NET solution build (checks out wiaoj/libraries sibling), dashboard bun build
 
 ### 1.2 Veil.Shared
@@ -108,7 +108,7 @@
 - [x] `ActionDispatcher` — allow / block / challenge / rate_limit
 
 ### 2.5 Rate limiting
-- [ ] Redis INCR + EXPIRE (Lua, atomic)
+- [x] Redis INCR + EXPIRE (Lua, atomic) — fleet-shared counters via `VEIL_RATELIMIT_REDIS_URL` (`RedisLimiter`, single-round-trip Lua sliding window mirroring the in-memory math); unset falls back to per-process counters, Redis errors fail open. Public push/ACME budgets stay per-node in-memory.
 - [x] Sliding window (two adjacent fixed windows)
 - [x] Per-rule key namespace
 
@@ -153,10 +153,22 @@
 - [x] Challenge token issuance (HMAC-SHA256, HttpOnly Secure cookie, 10min TTL)
 - [x] Token verification on subsequent requests (in-process)
 
-### 4.3 hCaptcha (Tier 2)
-- [ ] Tier 2 challenge page + hCaptcha widget
-- [ ] hCaptcha token verification
-- [ ] Risk threshold config per zone
+### 4.3 Tier 2 interaction challenge (self-hosted, no third party)
+> Chose a self-hosted behavioural challenge over hCaptcha: no third-party
+> dependency, privacy-friendly, fully in-process. Honest scope — the
+> behavioural signal is a friction/cost layer (synthetic input can pass it);
+> the hard floor stays the elevated, nonce-bound PoW.
+- [x] Tier 2 challenge page — reuses the PoW page; collects coarse pointer/touch
+  telemetry (event count, path length, straightness, duration, timing jitter)
+  while the puzzle solves, prompts for interaction, submits with the solution
+- [x] Server-side behaviour scoring (`challenge/behavior.rs`, 0–100 human
+  confidence) — zero-interaction / constant-cadence / too-fast / dead-straight
+  paths fail; bound to the nonce + single-use so a failed attempt burns it
+- [x] Tier selection — risk score ≥ threshold ⇒ Tier 2 (elevated PoW +3 bits +
+  behaviour check); token carries a `tier` claim
+- [x] Risk threshold config per zone (`ChallengeSettings.tier2_risk_threshold`,
+  default 70)
+- [ ] hCaptcha/Turnstile as an optional pluggable Tier 2 backend (deferred)
 
 ---
 
@@ -214,7 +226,7 @@
 ### 7.1 Scaffold
 - [x] Vite + React + TypeScript (TanStack Start, Tailwind 4, bun)
 - [x] TanStack Router (Query, Form + Zod pending — plain fetch hook for now)
-- [ ] shadcn/ui setup
+- [x] shadcn/ui setup — `components.json` (new-york, lucide), `cn()` in `@/lib/utils`, semantic tokens mapped onto the sea/lagoon palette in `styles.css` (`@theme inline` + `@custom-variant dark`), `tw-animate-css`; canonical `ui/button.tsx` as the reference component (`bunx shadcn@latest add <name>` for more)
 - [x] JWT auth flow against `Veil.Api` — login, localStorage tokens, refresh-and-retry on 401, dev Vite proxy (`/v1` → :5210, no CORS)
 
 ### 7.2 Zones & Rules
@@ -245,6 +257,13 @@
 - [x] Prometheus metrics — control plane (`GET /metrics`): `veil_config_push_total{result}` (Veil.Api), `veil_clickhouse_rows_written_total` + `veil_clickhouse_write_failures_total` (worker) — shared dependency-free `MetricsCollector` in Veil.Shared
 - [x] Health check endpoints (`/healthz` liveness, `/readyz` readiness) on all HTTP services — control plane + analytics worker probe PostgreSQL; edge readiness requires a loaded zone config
 - [x] Graceful shutdown — drain in-flight requests (edge: Ctrl-C/SIGTERM → stop accepting → `GracefulShutdown` drain, 30s cap, both HTTP + TLS listeners; .NET services drain via the generic host by default)
+- [x] JA3 TLS fingerprinting — ClientHello peeked off the socket (`TcpStream::peek`, non-consuming) and parsed into a JA3 MD5 (`edge/src/tls/ja3.rs`, GREASE-stripped); exposed on the request context and as a `ja3` rule condition for blocklisting bot/tooling fingerprints. JA4 deferred
+- [x] GeoIP/ASN enrichment — MaxMind MMDB lookup (`edge/src/geoip.rs`, `VEIL_GEOIP_PATH` / `VEIL_GEOIP_ASN_PATH`); populates `country`/`asn` on the request context and adds a `country` rule condition (geo-blocking). Optional — absent DB ⇒ fields stay `None`
+- [x] Signing-key rotation — versioned signing keys (`Auth:SigningKeys` + `Auth:ActiveSigningKeyId`, JWT `kid` header, all ring keys validate); legacy single `Auth:SigningKey` still works. Zero-downtime: add key → flip active → drop old after token TTL
+- [x] Control-plane login brute-force protection — per-account lockout on the login endpoint (`User.FailedLoginAttempts`/`LockedUntilUtc`, `Auth:MaxFailedLoginAttempts` default 5, `Auth:LockoutMinutes` default 15); locked accounts rejected with the same `401` shape (no enumeration). Migration `AuthLockoutAndAudit` (apply with `dotnet ef database update`)
+- [x] Audit log — append-only `auth.audit_events` table + `IAuditLogger`; records login success/failure/lockout and API-key create/revoke (actor, source IP, target, outcome)
+- [x] Managed signature rule set (OWASP-CRS-style) — built-in SQLi/XSS/path-traversal `RegexSet` families (`pipeline/signatures.rs`), per-zone `managed_rules` toggle + block/challenge action, scanning URL/query/headers/body (raw + percent-decoded); regex rule conditions (`path_regex`/`query_regex`/`header_regex`/`body_regex`); opt-in body buffering (256 KiB cap). Starter set, not a full CRS port
+- [x] OpenTelemetry tracing + metrics — control plane (`Veil.Api`) and analytics worker export OTLP traces/metrics (ASP.NET Core + HttpClient + runtime instrumentation) via shared `AddVeilTelemetry`; opt-in through `OTEL_EXPORTER_OTLP_ENDPOINT` (no-op + zero overhead when unset)
 - [ ] Integration test suite (Testcontainers — PostgreSQL, Redis, ClickHouse)
 - [x] Edge load test baseline — dependency-free `cargo run --example loadtest`; dispatch-path baseline ~104k req/s, p99 ~1.6ms (dev box, loopback), clearing the 100k target. Documented in edge-README.md.
 

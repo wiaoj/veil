@@ -14,7 +14,22 @@ use std::net::IpAddr;
 
 use hyper::Uri;
 use ipnet::IpNet;
+use regex::Regex;
 use serde::{Deserialize, Deserializer};
+
+/// A regex compiled at config-load time. Deserializes from a pattern string;
+/// an invalid pattern fails the whole config load (fail-safe).
+#[derive(Debug, Clone)]
+pub struct CompiledRegex(pub Regex);
+
+impl<'de> Deserialize<'de> for CompiledRegex {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let pattern = String::deserialize(de)?;
+        Regex::new(&pattern)
+            .map(CompiledRegex)
+            .map_err(|e| serde::de::Error::custom(format!("invalid regex '{pattern}': {e}")))
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -38,6 +53,60 @@ pub struct Zone {
     /// (Phase 5). Picked by SNI on the HTTPS listener.
     #[serde(default)]
     pub tls: Option<ZoneTls>,
+    /// Per-zone challenge tuning (Phase 4.3). Absent → engine defaults.
+    #[serde(default)]
+    pub challenge: Option<ChallengeSettings>,
+    /// Managed signature rule set (OWASP-CRS-style SQLi/XSS/traversal).
+    /// Absent → no managed inspection for this zone.
+    #[serde(default)]
+    pub managed_rules: Option<ManagedRules>,
+}
+
+impl Zone {
+    /// Whether any configured rule or the managed rule set needs the request
+    /// body buffered for inspection.
+    pub fn needs_body_inspection(&self) -> bool {
+        self.managed_rules.as_ref().is_some_and(|m| m.inspect_body)
+            || self
+                .rules
+                .iter()
+                .flat_map(|r| &r.conditions)
+                .any(|c| matches!(c, Condition::BodyRegex { .. }))
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct ChallengeSettings {
+    /// Risk score (`0..=100`) at or above which the Tier 2 interaction
+    /// challenge is served instead of the Tier 1 PoW page.
+    pub tier2_risk_threshold: u8,
+}
+
+/// Managed signature rule set toggles (Phase 8.x). Each category enables a
+/// built-in family of attack-pattern signatures evaluated against the request
+/// line, query string, inspected headers and (optionally) the body.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct ManagedRules {
+    #[serde(default)]
+    pub sql_injection: bool,
+    #[serde(default)]
+    pub xss: bool,
+    #[serde(default)]
+    pub path_traversal: bool,
+    /// Buffer and scan the request body in addition to the URL and headers.
+    #[serde(default)]
+    pub inspect_body: bool,
+    /// What to do on a signature match.
+    #[serde(default)]
+    pub action: ManagedAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ManagedAction {
+    #[default]
+    Block,
+    Challenge,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,6 +152,20 @@ pub enum Condition {
     Method { value: String },
     Header { name: String, value: String },
     UserAgentContains { value: String },
+    /// Regex over the request path.
+    PathRegex { value: CompiledRegex },
+    /// Regex over the raw query string (empty string when absent).
+    QueryRegex { value: CompiledRegex },
+    /// Regex over a named request header's value.
+    HeaderRegex { name: String, value: CompiledRegex },
+    /// Regex over the request body. Forces body buffering for the zone.
+    BodyRegex { value: CompiledRegex },
+    /// Matches the client's GeoIP country (ISO 3166-1 alpha-2, e.g. `"TR"`).
+    /// Case-insensitive; never matches when no GeoIP database is loaded.
+    Country { value: String },
+    /// Matches the client's JA3 TLS fingerprint (MD5 hex). Useful for
+    /// blocklisting known bot/tooling fingerprints. HTTPS only.
+    Ja3 { value: String },
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

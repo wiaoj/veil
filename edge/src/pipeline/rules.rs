@@ -16,9 +16,14 @@ use crate::config::{Action, Condition, Rule, Zone};
 use super::rate_limit::RateLimiter;
 use super::{RequestContext, Verdict};
 
-pub fn evaluate(zone: &Zone, ctx: &RequestContext, limiter: &RateLimiter) -> Verdict {
+pub async fn evaluate(
+    zone: &Zone,
+    ctx: &RequestContext,
+    limiter: &RateLimiter,
+    body: Option<&[u8]>,
+) -> Verdict {
     for rule in &zone.rules {
-        if !rule.conditions.iter().all(|c| matches(c, ctx)) {
+        if !rule.conditions.iter().all(|c| matches(c, ctx, body)) {
             continue;
         }
         match rule.action {
@@ -26,7 +31,7 @@ pub fn evaluate(zone: &Zone, ctx: &RequestContext, limiter: &RateLimiter) -> Ver
             Action::Block => return Verdict::Block { rule_id: rule.id.clone() },
             Action::Challenge => return Verdict::Challenge { rule_id: rule.id.clone() },
             Action::RateLimit => {
-                if is_rate_limited(rule, ctx, limiter) {
+                if is_rate_limited(rule, ctx, limiter).await {
                     return Verdict::RateLimited { rule_id: rule.id.clone() };
                 }
             }
@@ -35,17 +40,17 @@ pub fn evaluate(zone: &Zone, ctx: &RequestContext, limiter: &RateLimiter) -> Ver
     Verdict::Allow
 }
 
-fn is_rate_limited(rule: &Rule, ctx: &RequestContext, limiter: &RateLimiter) -> bool {
+async fn is_rate_limited(rule: &Rule, ctx: &RequestContext, limiter: &RateLimiter) -> bool {
     let params = rule
         .rate_limit
         .expect("validated at config load: rate_limit action has params");
     // Per-rule key namespace: a per-IP rule and a per-path rule never share
     // counters.
     let key = format!("{}:{}", rule.id, ctx.client_ip);
-    !limiter.allow(&key, params.requests, params.window_secs)
+    !limiter.allow(&key, params.requests, params.window_secs).await
 }
 
-fn matches(condition: &Condition, ctx: &RequestContext) -> bool {
+fn matches(condition: &Condition, ctx: &RequestContext, body: Option<&[u8]>) -> bool {
     match condition {
         Condition::Ip { value } => value.contains(&ctx.client_ip),
         Condition::PathPrefix { value } => ctx.path.starts_with(value),
@@ -60,6 +65,21 @@ fn matches(condition: &Condition, ctx: &RequestContext) -> bool {
             .user_agent
             .as_deref()
             .is_some_and(|ua| ua.to_ascii_lowercase().contains(&value.to_ascii_lowercase())),
+        Condition::PathRegex { value } => value.0.is_match(&ctx.path),
+        Condition::QueryRegex { value } => value.0.is_match(ctx.query.as_deref().unwrap_or("")),
+        Condition::HeaderRegex { name, value } => ctx
+            .headers
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| value.0.is_match(v)),
+        Condition::BodyRegex { value } => {
+            body.is_some_and(|b| value.0.is_match(&String::from_utf8_lossy(b)))
+        }
+        Condition::Country { value } => ctx
+            .country
+            .as_deref()
+            .is_some_and(|c| c.eq_ignore_ascii_case(value)),
+        Condition::Ja3 { value } => ctx.ja3.as_deref().is_some_and(|j| j == value),
     }
 }
 
@@ -75,8 +95,12 @@ mod tests {
             host: "example.com".into(),
             method: Method::GET,
             path: path.into(),
+            query: None,
             user_agent: Some("Mozilla/5.0 TestBrowser".into()),
             headers: HeaderMap::new(),
+            country: None,
+            asn: None,
+            ja3: None,
         }
     }
 
@@ -89,17 +113,17 @@ mod tests {
         config.zones.into_iter().next().unwrap()
     }
 
-    #[test]
-    fn empty_rule_set_allows() {
+    #[tokio::test]
+    async fn empty_rule_set_allows() {
         let zone = zone("[]");
         assert_eq!(
-            evaluate(&zone, &ctx("1.1.1.1", "/"), &RateLimiter::new()),
+            evaluate(&zone, &ctx("1.1.1.1", "/"), &RateLimiter::in_memory(), None).await,
             Verdict::Allow
         );
     }
 
-    #[test]
-    fn first_matching_rule_by_priority_wins() {
+    #[tokio::test]
+    async fn first_matching_rule_by_priority_wins() {
         let zone = zone(
             r#"[
             {"id": "block-all", "priority": 20, "action": "block", "conditions": []},
@@ -107,56 +131,94 @@ mod tests {
              "conditions": [{"type": "ip", "value": "10.0.0.0/8"}]}
         ]"#,
         );
-        let limiter = RateLimiter::new();
+        let limiter = RateLimiter::in_memory();
         // VIP IP hits the priority-10 allow before the catch-all block.
-        assert_eq!(evaluate(&zone, &ctx("10.1.2.3", "/"), &limiter), Verdict::Allow);
+        assert_eq!(evaluate(&zone, &ctx("10.1.2.3", "/"), &limiter, None).await, Verdict::Allow);
         assert_eq!(
-            evaluate(&zone, &ctx("8.8.8.8", "/"), &limiter),
+            evaluate(&zone, &ctx("8.8.8.8", "/"), &limiter, None).await,
             Verdict::Block { rule_id: "block-all".into() }
         );
     }
 
-    #[test]
-    fn all_conditions_must_match() {
+    #[tokio::test]
+    async fn all_conditions_must_match() {
         let zone = zone(
             r#"[{"id": "r", "priority": 1, "action": "block", "conditions": [
                 {"type": "path_prefix", "value": "/admin"},
                 {"type": "method", "value": "POST"}
             ]}]"#,
         );
-        let limiter = RateLimiter::new();
+        let limiter = RateLimiter::in_memory();
         // GET /admin matches only one of the two conditions.
-        assert_eq!(evaluate(&zone, &ctx("1.1.1.1", "/admin"), &limiter), Verdict::Allow);
+        assert_eq!(evaluate(&zone, &ctx("1.1.1.1", "/admin"), &limiter, None).await, Verdict::Allow);
     }
 
-    #[test]
-    fn user_agent_match_is_case_insensitive() {
+    #[tokio::test]
+    async fn user_agent_match_is_case_insensitive() {
         let zone = zone(
             r#"[{"id": "ua", "priority": 1, "action": "challenge",
                  "conditions": [{"type": "user_agent_contains", "value": "testbrowser"}]}]"#,
         );
         assert_eq!(
-            evaluate(&zone, &ctx("1.1.1.1", "/"), &RateLimiter::new()),
+            evaluate(&zone, &ctx("1.1.1.1", "/"), &RateLimiter::in_memory(), None).await,
             Verdict::Challenge { rule_id: "ua".into() }
         );
     }
 
-    #[test]
-    fn rate_limit_rule_passes_through_until_exceeded() {
+    #[tokio::test]
+    async fn rate_limit_rule_passes_through_until_exceeded() {
         let zone = zone(
             r#"[{"id": "rl", "priority": 1, "action": "rate_limit",
                  "conditions": [{"type": "path_prefix", "value": "/api"}],
                  "rate_limit": {"requests": 2, "window_secs": 60}}]"#,
         );
-        let limiter = RateLimiter::new();
+        let limiter = RateLimiter::in_memory();
         let c = ctx("1.1.1.1", "/api/users");
-        assert_eq!(evaluate(&zone, &c, &limiter), Verdict::Allow);
-        assert_eq!(evaluate(&zone, &c, &limiter), Verdict::Allow);
+        assert_eq!(evaluate(&zone, &c, &limiter, None).await, Verdict::Allow);
+        assert_eq!(evaluate(&zone, &c, &limiter, None).await, Verdict::Allow);
         assert_eq!(
-            evaluate(&zone, &c, &limiter),
+            evaluate(&zone, &c, &limiter, None).await,
             Verdict::RateLimited { rule_id: "rl".into() }
         );
         // A different client IP has its own counter.
-        assert_eq!(evaluate(&zone, &ctx("2.2.2.2", "/api/users"), &limiter), Verdict::Allow);
+        assert_eq!(evaluate(&zone, &ctx("2.2.2.2", "/api/users"), &limiter, None).await, Verdict::Allow);
+    }
+
+    #[tokio::test]
+    async fn query_and_body_regex_conditions_match() {
+        let zone = zone(
+            r#"[{"id": "rx", "priority": 1, "action": "block", "conditions": [
+                {"type": "query_regex", "value": "(?i)debug=true"},
+                {"type": "body_regex", "value": "(?i)secret"}
+            ]}]"#,
+        );
+        let limiter = RateLimiter::in_memory();
+        let mut c = ctx("1.1.1.1", "/x");
+        c.query = Some("debug=true&x=1".into());
+        // Body condition needs the buffered body.
+        assert_eq!(
+            evaluate(&zone, &c, &limiter, Some(b"payload secret here")).await,
+            Verdict::Block { rule_id: "rx".into() }
+        );
+        // Without the matching body, the AND-ed rule does not fire.
+        assert_eq!(evaluate(&zone, &c, &limiter, Some(b"clean")).await, Verdict::Allow);
+    }
+
+    #[tokio::test]
+    async fn country_condition_blocks_by_geoip() {
+        let zone = zone(
+            r#"[{"id": "geo", "priority": 1, "action": "block",
+                 "conditions": [{"type": "country", "value": "RU"}]}]"#,
+        );
+        let limiter = RateLimiter::in_memory();
+        let mut c = ctx("1.1.1.1", "/");
+        // No GeoIP data → never matches.
+        assert_eq!(evaluate(&zone, &c, &limiter, None).await, Verdict::Allow);
+        // Country resolved (case-insensitive) → blocked.
+        c.country = Some("ru".into());
+        assert_eq!(
+            evaluate(&zone, &c, &limiter, None).await,
+            Verdict::Block { rule_id: "geo".into() }
+        );
     }
 }

@@ -83,6 +83,14 @@ Evaluates the zone's rule list, compiled at config load time into a priority-ord
 
 Rate limiting is implemented as a Redis INCR + EXPIRE atomic operation. Each rate limit rule has its own key namespace, so a per-IP rule and a per-path rule don't interfere.
 
+Rule conditions include exact/prefix matches (`ip`, `path_prefix`, `path_exact`, `method`, `header`, `user_agent_contains`), **regex** conditions (`path_regex`, `query_regex`, `header_regex`, `body_regex`), and signal-based conditions (`country` via GeoIP, `ja3` via TLS fingerprint), all AND-ed within a rule. Regexes are compiled at config load — an invalid pattern fails the whole config (fail-safe).
+
+**JA3 TLS fingerprint** (`tls/ja3.rs`)  
+For HTTPS connections the edge peeks the ClientHello off the socket (`TcpStream::peek`, non-consuming, so rustls still runs the real handshake) and computes a JA3 fingerprint (MD5 over the GREASE-stripped version/ciphers/extensions/curves/point-formats). It is attached to the request context, logged, and usable as a `ja3` rule condition to blocklist known bot/tooling stacks — a far stronger automated-client signal than the User-Agent. JA4 is deferred.
+
+**Managed signature rules** (`pipeline/signatures.rs`)  
+An OWASP-CRS-style starter rule set: built-in `RegexSet` families for **SQL injection, XSS and path traversal**, enabled per-zone via `managed_rules` (each category toggled independently). They run as a second phase after custom rules: if the custom rules allow the request, the managed set scans the path, query string, high-signal headers (User-Agent, Referer, Cookie) and — when `inspect_body` is on — the request body, against both the raw and percent-decoded forms. A match yields `block` or `challenge` (per `managed_rules.action`) with rule id `managed:{sqli|xss|traversal}`. Body inspection buffers up to 256 KiB; larger declared bodies are forwarded streamed without body inspection, and a chunked body that overflows the cap mid-read is rejected (413). This is a high-confidence starter set, not a full CRS port.
+
 **Router** (`pipeline/router.rs`)  
 Selects an upstream for `allow` verdicts using the zone's load balancing strategy (round-robin, least-connections, or IP-hash). Rewrites the request (Host header, X-Forwarded-For, X-Real-IP) and forwards it via the upstream pool. Streams the response back to the client.
 
@@ -103,8 +111,10 @@ Difficulty is tunable per zone. At difficulty 20, a modern browser solves the pu
 
 The challenge page displays real-time progress, an estimated time remaining, and a brief human-readable explanation of what is happening and why. The WASM bundle is served as a static asset from the edge node itself — no external dependency at challenge time.
 
-**hCaptcha** (`challenge/hcaptcha.rs`)  
-Tier 2: rendered when PoW is passed but a configurable risk threshold is still exceeded (e.g. known-bad ASN, unusual header fingerprint). The edge node serves an hCaptcha widget page and verifies the response token against the hCaptcha API before issuing a challenge cookie.
+**Interaction challenge** (`challenge/behavior.rs`)  
+Tier 2: served when the request's risk score (`challenge/risk.rs`) reaches a per-zone threshold (`challenge.tier2_risk_threshold` in the zone config, default 70). Self-hosted — no third party. The same challenge page additionally collects coarse pointer/touch telemetry (event count, path length, straightness, interaction duration, timing jitter) while the PoW solves, and submits it with the solution. The edge scores that telemetry into a 0–100 human-confidence value: zero interaction, constant timing cadence, dead-straight paths and too-fast solves fail. The telemetry is bound to the (single-use) nonce, and Tier 2 also adds +3 PoW bits.
+
+Honest framing: behavioural signals are a friction/cost layer, not a hard bot defeat — recorded or synthesised input can pass them. The hard floor stays the elevated, nonce-bound PoW; the behaviour check raises the cost of a client that solves the puzzle but performs no real interaction. Swapping in hCaptcha/Turnstile as an optional Tier 2 backend is left as a future pluggable option.
 
 ### `src/config/`
 
@@ -126,7 +136,9 @@ Edge nodes are configured via environment variables. There is no config file —
 | `VEIL_LISTEN_HTTPS` | `127.0.0.1:8443` | HTTPS listener address (active only with TLS configured) |
 | `VEIL_TLS_CERT` | — | PEM certificate chain path; with `VEIL_TLS_KEY` enables the HTTPS listener |
 | `VEIL_TLS_KEY` | — | PEM private key path |
-| `VEIL_REDIS_URL` | `redis://127.0.0.1:6379` | Redis for rate limiting and tokens |
+| `VEIL_RATELIMIT_REDIS_URL` | — | Redis URL for **fleet-shared** `rate_limit` rule counters (atomic sliding window via Lua). Unset → per-process in-memory counters. Redis errors fail open (request allowed). |
+| `VEIL_GEOIP_PATH` | — | MaxMind Country/City MMDB; enables the `country` rule condition + country enrichment. Unset → no geo. |
+| `VEIL_GEOIP_ASN_PATH` | — | MaxMind ASN MMDB; enables ASN capture on the request context. |
 | `VEIL_GEOIP_PATH` | `/etc/veil/GeoLite2-City.mmdb` | MaxMind MMDB path |
 | `VEIL_LOG_LEVEL` | `info` | Tracing level (`trace`, `debug`, `info`, `warn`, `error`) |
 | `VEIL_ANALYTICS_URL` | — | Analytics worker base URL for request log forwarding (`{url}/ingest`); unset disables emission |

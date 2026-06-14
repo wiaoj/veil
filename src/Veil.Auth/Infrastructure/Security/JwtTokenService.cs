@@ -2,7 +2,6 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
-using System.Text;
 using Veil.Auth.Domain;
 using Veil.Auth.Domain.ValueObjects;
 using Veil.Shared;
@@ -11,10 +10,13 @@ namespace Veil.Auth.Infrastructure.Security;
 
 /// <summary>
 /// Issues HMAC-SHA256 signed access tokens. The subject claim carries the
-/// public (obfuscated) user id — raw ids never leave the module.
+/// public (obfuscated) user id — raw ids never leave the module. Tokens are
+/// signed with the active key from the <see cref="SigningKeyRing"/> and carry
+/// its id in the <c>kid</c> header so rotation stays zero-downtime.
 /// </summary>
 public sealed class JwtTokenService(
     IOptions<AuthOptions> options,
+    SigningKeyRing keyRing,
     IObfuscator<UserId> userObfuscator,
     TimeProvider timeProvider) {
 
@@ -25,11 +27,10 @@ public sealed class JwtTokenService(
     public TimeSpan RefreshTokenLifetime => TimeSpan.FromDays(this._options.RefreshTokenDays);
 
     public string IssueAccessToken(User user) {
-        if(string.IsNullOrEmpty(this._options.SigningKey))
-            throw new InvalidOperationException("Auth:SigningKey is not configured; cannot issue tokens.");
+        if(keyRing.ActiveCredentials is null)
+            throw new InvalidOperationException("No Auth signing key is configured; cannot issue tokens.");
 
         DateTimeOffset now = timeProvider.GetUtcNow();
-        SymmetricSecurityKey key = new(Encoding.UTF8.GetBytes(this._options.SigningKey));
 
         SecurityTokenDescriptor descriptor = new() {
             Issuer = this._options.Issuer,
@@ -42,7 +43,7 @@ public sealed class JwtTokenService(
                 new Claim(JwtRegisteredClaimNames.Email, user.Email),
                 new Claim(ClaimTypes.Role, user.Role.ToString()),
             ]),
-            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
+            SigningCredentials = keyRing.ActiveCredentials
         };
 
         return this._handler.CreateToken(descriptor);

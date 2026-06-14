@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Veil.Auth.Audit;
 using Veil.Auth.Domain;
 using Veil.Auth.Domain.ValueObjects;
 using Veil.Auth.Infrastructure.Persistence;
@@ -27,6 +28,8 @@ public sealed class RevokeApiKeyEndpoint : IEndpoint {
         IDbContextFactory<AuthDbContext> dbFactory,
         IObfuscator<ApiKeyId> obfuscator,
         TimeProvider timeProvider,
+        IAuditLogger audit,
+        HttpContext httpContext,
         CancellationToken cancellationToken) {
 
         Result<ApiKeyId> keyId = obfuscator.Decode(id);
@@ -46,6 +49,14 @@ public sealed class RevokeApiKeyEndpoint : IEndpoint {
         if(revoke.IsFailure) return revoke.ToProblemDetails();
 
         await db.SaveChangesAsync(cancellationToken);
+
+        await audit.WriteAsync(
+            AuditActions.ApiKeyRevoked,
+            AuditOutcome.Success,
+            actor: httpContext.User.Identity?.Name,
+            actorIp: httpContext.Connection.RemoteIpAddress?.ToString(),
+            target: id,
+            cancellationToken: cancellationToken);
 
         return Results.NoContent();
     }

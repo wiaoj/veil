@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Veil.Analytics;
 using Veil.EdgeNodes.Infrastructure.Persistence;
 using Veil.Shared;
+using Veil.Shared.Observability;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,6 +11,9 @@ builder.Services.AddModulith(builder.Configuration, builder.Environment, modules
     modules.AddModule<AnalyticsModule>();
 });
 builder.Services.AddModulithAspNetCore();
+
+// OpenTelemetry tracing + metrics (opt-in via OTEL_EXPORTER_OTLP_ENDPOINT).
+builder.Services.AddVeilTelemetry(builder.Configuration, "veil-analytics");
 
 // Auth surface only — deliberately not the whole EdgeNodes module, so the
 // node management endpoints are not exposed on the ingest port. The

@@ -43,6 +43,11 @@ spec:
               value: "http://veil-api:8080"
             - name: VEIL_ANALYTICS_URL
               value: "http://veil-analytics:8080"
+            # Fleet-shared rate-limit counters (Phase 2.5). Without this every
+            # node counts independently; with it a per-IP limit holds across
+            # the whole DaemonSet.
+            - name: VEIL_RATELIMIT_REDIS_URL
+              value: "redis://redis-ratelimit:6379"
             - name: VEIL_NODE_ID
               valueFrom:
                 secretKeyRef:

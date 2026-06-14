@@ -9,22 +9,33 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use super::Tier;
+
+/// Material bound to an issued nonce: the PoW difficulty it must be solved at
+/// and the challenge tier it was issued for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NonceInfo {
+    pub difficulty: u32,
+    pub tier: Tier,
+}
+
 // ── trait ─────────────────────────────────────────────────────────────
 
 /// Abstraction over nonce storage.  Implementations must be thread-safe.
 pub trait NonceStore: Send + Sync {
-    /// Insert a nonce with the PoW difficulty bound to it. Returns `true` if
-    /// it was freshly inserted, `false` if it already existed (replay).
-    fn insert(&self, nonce: &str, difficulty: u32) -> bool;
+    /// Insert a nonce with the difficulty and tier bound to it. Returns
+    /// `true` if it was freshly inserted, `false` if it already existed
+    /// (replay).
+    fn insert(&self, nonce: &str, info: NonceInfo) -> bool;
 
     /// Remove a nonce after successful verification. Returns `true` if it
     /// existed (and was removed).
     fn remove(&self, nonce: &str) -> bool;
 
-    /// Returns the difficulty bound to a currently-stored nonce, if any.
-    /// Binding the difficulty to the nonce stops a client from solving at a
-    /// lower difficulty than the one it was issued.
-    fn difficulty(&self, nonce: &str) -> Option<u32>;
+    /// Returns the info bound to a currently-stored nonce, if any. Binding the
+    /// difficulty and tier to the nonce stops a client from solving below the
+    /// level — or skipping the tier — it was issued at.
+    fn lookup(&self, nonce: &str) -> Option<NonceInfo>;
 }
 
 // ── in-memory impl ───────────────────────────────────────────────────
@@ -36,7 +47,7 @@ pub struct InMemoryNonceStore {
 
 struct NonceEntry {
     expires_at: Instant,
-    difficulty: u32,
+    info: NonceInfo,
 }
 
 struct NonceMap {
@@ -69,7 +80,7 @@ impl InMemoryNonceStore {
 }
 
 impl NonceStore for InMemoryNonceStore {
-    fn insert(&self, nonce: &str, difficulty: u32) -> bool {
+    fn insert(&self, nonce: &str, info: NonceInfo) -> bool {
         let mut map = self.inner.lock().expect("nonce store poisoned");
         Self::maybe_cleanup(&mut map);
 
@@ -81,7 +92,7 @@ impl NonceStore for InMemoryNonceStore {
             }
         map.entries.insert(nonce.to_owned(), NonceEntry {
             expires_at: now + self.ttl,
-            difficulty,
+            info,
         });
         true
     }
@@ -91,12 +102,12 @@ impl NonceStore for InMemoryNonceStore {
         map.entries.remove(nonce).is_some()
     }
 
-    fn difficulty(&self, nonce: &str) -> Option<u32> {
+    fn lookup(&self, nonce: &str) -> Option<NonceInfo> {
         let map = self.inner.lock().expect("nonce store poisoned");
         map.entries
             .get(nonce)
             .filter(|entry| entry.expires_at > Instant::now())
-            .map(|entry| entry.difficulty)
+            .map(|entry| entry.info)
     }
 }
 
@@ -108,23 +119,27 @@ mod tests {
         InMemoryNonceStore::new(Duration::from_secs(60))
     }
 
+    fn info(difficulty: u32) -> NonceInfo {
+        NonceInfo { difficulty, tier: Tier::One }
+    }
+
     #[test]
     fn insert_fresh_nonce_returns_true() {
         let s = store();
-        assert!(s.insert("abc123", 20));
+        assert!(s.insert("abc123", info(20)));
     }
 
     #[test]
     fn duplicate_insert_returns_false() {
         let s = store();
-        assert!(s.insert("abc123", 20));
-        assert!(!s.insert("abc123", 20), "second insert should be rejected");
+        assert!(s.insert("abc123", info(20)));
+        assert!(!s.insert("abc123", info(20)), "second insert should be rejected");
     }
 
     #[test]
     fn remove_existing_returns_true() {
         let s = store();
-        s.insert("abc123", 20);
+        s.insert("abc123", info(20));
         assert!(s.remove("abc123"));
     }
 
@@ -135,22 +150,22 @@ mod tests {
     }
 
     #[test]
-    fn difficulty_tracks_insertion() {
+    fn lookup_tracks_insertion() {
         let s = store();
-        assert_eq!(s.difficulty("abc123"), None);
-        s.insert("abc123", 22);
-        assert_eq!(s.difficulty("abc123"), Some(22));
+        assert_eq!(s.lookup("abc123"), None);
+        s.insert("abc123", NonceInfo { difficulty: 22, tier: Tier::Two });
+        assert_eq!(s.lookup("abc123"), Some(NonceInfo { difficulty: 22, tier: Tier::Two }));
         s.remove("abc123");
-        assert_eq!(s.difficulty("abc123"), None);
+        assert_eq!(s.lookup("abc123"), None);
     }
 
     #[test]
     fn expired_nonce_can_be_reinserted() {
         let s = InMemoryNonceStore::new(Duration::from_millis(1));
-        s.insert("abc123", 20);
+        s.insert("abc123", info(20));
         std::thread::sleep(Duration::from_millis(10));
         assert!(
-            s.insert("abc123", 20),
+            s.insert("abc123", info(20)),
             "expired nonce should be accepted as fresh"
         );
     }

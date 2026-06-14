@@ -1,10 +1,44 @@
 
 @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap");
 @import "tailwindcss";
+@import "tw-animate-css";
 @plugin "@tailwindcss/typography";
+
+/* shadcn/ui dark variant — ThemeToggle toggles the `.dark` class on <html>. */
+@custom-variant dark (&:is(.dark *));
 
 @theme {
   --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* shadcn/ui semantic tokens, mapped onto Veil's sea/lagoon palette so
+   generated components match the existing design. Add components with
+   `bunx shadcn@latest add <name>`. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 :root {
@@ -27,6 +61,32 @@
   --link-bg-hover: rgba(255, 255, 255, 0.9);
   --hero-a: rgba(79, 184, 178, 0.36);
   --hero-b: rgba(47, 106, 74, 0.2);
+}
+
+/* shadcn token values. These reference the palette vars above, which flip in
+   dark mode, so the semantic tokens follow the theme without a separate
+   override block. --destructive is theme-independent. */
+:root {
+  --radius: 0.75rem;
+  --background: var(--bg-base);
+  --foreground: var(--sea-ink);
+  --card: var(--surface-strong);
+  --card-foreground: var(--sea-ink);
+  --popover: var(--foam);
+  --popover-foreground: var(--sea-ink);
+  --primary: var(--lagoon-deep);
+  --primary-foreground: var(--foam);
+  --secondary: var(--chip-bg);
+  --secondary-foreground: var(--sea-ink);
+  --muted: var(--sand);
+  --muted-foreground: var(--sea-ink-soft);
+  --accent: var(--chip-bg);
+  --accent-foreground: var(--sea-ink);
+  --destructive: #c44747;
+  --destructive-foreground: #fff5f5;
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--lagoon);
 }
 
 :root[data-theme="dark"] {

@@ -4,6 +4,7 @@ pub mod inspector;
 pub mod rate_limit;
 pub mod router;
 pub mod rules;
+pub mod signatures;
 
 use std::net::IpAddr;
 
@@ -17,8 +18,18 @@ pub struct RequestContext {
     pub host: String,
     pub method: Method,
     pub path: String,
+    /// Raw query string without the leading `?` (`None` when absent).
+    pub query: Option<String>,
     pub user_agent: Option<String>,
     pub headers: HeaderMap,
+    /// ISO 3166-1 alpha-2 country code from GeoIP (`None` when no MMDB or no
+    /// match). Populated after inspection when a GeoIP database is loaded.
+    pub country: Option<String>,
+    /// Autonomous system number from the ASN MMDB, when available.
+    pub asn: Option<u32>,
+    /// JA3 TLS client fingerprint (MD5 hex) for HTTPS connections. `None` for
+    /// plaintext HTTP or when the ClientHello could not be parsed.
+    pub ja3: Option<String>,
 }
 
 impl RequestContext {

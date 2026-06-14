@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
+using Veil.Auth.Audit;
 using Veil.Auth.Domain;
 using Veil.Auth.Infrastructure.Persistence;
 using Veil.Auth.Infrastructure.Security;
@@ -41,22 +43,47 @@ public sealed class LoginEndpoint : IEndpoint {
         IDbContextFactory<AuthDbContext> dbFactory,
         JwtTokenService tokenService,
         TimeProvider timeProvider,
+        IOptions<AuthOptions> authOptions,
+        IAuditLogger audit,
+        HttpContext httpContext,
         CancellationToken cancellationToken) {
 
         if(string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrEmpty(req.Password))
             return Results.Unauthorized();
 
         string email = req.Email.Trim().ToLowerInvariant();
+        string? ip = httpContext.Connection.RemoteIpAddress?.ToString();
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        AuthOptions opts = authOptions.Value;
 
         await using AuthDbContext db = await dbFactory.CreateDbContextAsync(cancellationToken);
         User? user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
 
+        // Locked-out accounts are rejected before the password is even checked.
+        // The response shape is identical to a normal failure (no signal that
+        // the account is locked, no user enumeration).
+        if(user is not null && user.IsLockedOut(now)) {
+            await audit.WriteAsync(AuditActions.LoginLockedOut, AuditOutcome.Failure, email, ip, email, cancellationToken: cancellationToken);
+            return Results.Unauthorized();
+        }
+
         // Same response for unknown user and wrong password — no user
         // enumeration through error shape.
-        if(user is null || user.IsDisabled || !Pbkdf2PasswordHasher.Verify(req.Password, user.PasswordHash))
+        if(user is null || user.IsDisabled || !Pbkdf2PasswordHasher.Verify(req.Password, user.PasswordHash)) {
+            // Count failures (and arm lockout) only for real, enabled accounts.
+            if(user is not null && !user.IsDisabled) {
+                user.RegisterFailedLogin(now, opts.MaxFailedLoginAttempts, TimeSpan.FromMinutes(opts.LockoutMinutes));
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            await audit.WriteAsync(AuditActions.LoginFailure, AuditOutcome.Failure, email, ip, email, cancellationToken: cancellationToken);
             return Results.Unauthorized();
+        }
 
+        // Success: clear the failed-attempt counter (persisted together with
+        // the refresh token inside IssueTokenPairAsync's SaveChanges).
+        user.RegisterSuccessfulLogin();
         TokenPairResponse response = await IssueTokenPairAsync(db, user, tokenService, timeProvider, cancellationToken);
+        await audit.WriteAsync(AuditActions.LoginSuccess, AuditOutcome.Success, email, ip, email, cancellationToken: cancellationToken);
         return Results.Ok(response);
     }
 

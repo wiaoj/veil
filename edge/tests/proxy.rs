@@ -625,3 +625,69 @@ async fn graceful_shutdown_drains_then_stops_accepting() {
     let refused = client.get(format!("http://{addr}/ok").parse().unwrap()).await;
     assert!(refused.is_err(), "listener should be closed after shutdown");
 }
+
+// ── Managed signature rule set (WAF) ─────────────────────────────────
+
+async fn spawn_proxy_managed(upstream: SocketAddr) -> SocketAddr {
+    let config = Config::from_json(&format!(
+        r#"{{
+            "zones": [{{
+                "name": "waf",
+                "hosts": ["*"],
+                "upstream": "http://{upstream}",
+                "managed_rules": {{
+                    "sql_injection": true,
+                    "xss": true,
+                    "path_traversal": true,
+                    "inspect_body": true,
+                    "action": "block"
+                }}
+            }}]
+        }}"#
+    ))
+    .unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(proxy::serve(listener, Arc::new(AppState::new(config))));
+    addr
+}
+
+#[tokio::test]
+async fn managed_rules_block_sqli_in_query() {
+    let upstream = spawn_upstream().await;
+    let proxy = spawn_proxy_managed(upstream).await;
+    let client = client();
+
+    // Clean request passes through to the upstream.
+    assert_eq!(get(&client, proxy, "/products?id=42").await.status(), StatusCode::OK);
+
+    // SQLi payload in the query string is blocked before forwarding.
+    let blocked = get(&client, proxy, "/products?id=1%20UNION%20SELECT%20pw%20FROM%20users").await;
+    assert_eq!(blocked.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn managed_rules_block_xss_in_body() {
+    let upstream = spawn_upstream().await;
+    let proxy = spawn_proxy_managed(upstream).await;
+    let body_client: Client<hyper_util::client::legacy::connect::HttpConnector, Full<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+
+    let post = |payload: &'static str| {
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("http://{proxy}/comment"))
+            .header(hyper::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Full::new(Bytes::from(payload)))
+            .unwrap();
+        body_client.request(req)
+    };
+
+    // Clean body is forwarded.
+    assert_eq!(post("text=hello+world").await.unwrap().status(), StatusCode::OK);
+
+    // XSS in the body is blocked once buffered and inspected.
+    let blocked = post("text=<script>steal(document.cookie)</script>").await.unwrap();
+    assert_eq!(blocked.status(), StatusCode::FORBIDDEN);
+}

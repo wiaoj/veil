@@ -6,6 +6,8 @@
 //! pushes and are picked per-connection by SNI via
 //! [`DynamicCertResolver`] — no listener restart.
 
+pub mod ja3;
+
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 

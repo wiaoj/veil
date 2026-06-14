@@ -8,15 +8,16 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use hmac::{Hmac, Mac};
-use http_body_util::BodyExt;
-use hyper::body::Incoming;
+use http_body_util::{BodyExt, Full, Limited};
+use hyper::body::{Bytes, Incoming};
+use hyper::header::CONTENT_LENGTH;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto;
 use sha2::Sha256;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tracing::{debug, info, warn};
 
 use crate::acme::{AcmeStore, ChallengeSet, ACME_PUSH_PATH, HTTP01_PATH_PREFIX};
@@ -24,11 +25,12 @@ use crate::analytics::{self, LogBuffer, LogRecord};
 use crate::challenge::{ChallengeEngine, VerifySolutionRequest, CHALLENGE_VERIFY_PATH};
 use crate::config::cache;
 use crate::config::store::ConfigStore;
+use crate::config::ManagedAction;
 use crate::config::sync::NODE_TOKEN_HEADER;
 use crate::config::Config;
-use crate::pipeline::rate_limit::RateLimiter;
-use crate::pipeline::router::UpstreamClient;
-use crate::pipeline::{inspector, router, rules, Verdict};
+use crate::pipeline::rate_limit::{InMemoryLimiter, RateLimiter};
+use crate::pipeline::router::{BufferedClient, UpstreamClient};
+use crate::pipeline::{inspector, router, rules, signatures, Verdict};
 use crate::response::{forbidden, json_response, rate_limited, text, ProxyBody};
 
 /// Reserved path where the control plane pushes config updates at runtime.
@@ -48,10 +50,22 @@ const CONFIG_PUSH_MAX_BYTES: usize = 1024 * 1024;
 const CONFIG_PUSH_RATE_LIMIT: u32 = 10;
 const CONFIG_PUSH_RATE_WINDOW_SECS: u64 = 60;
 
+/// Maximum request body buffered for managed-rule / body-regex inspection.
+/// Requests declaring a larger body are forwarded streamed without body
+/// inspection; chunked bodies that exceed this mid-read are rejected.
+const MAX_INSPECT_BODY: usize = 256 * 1024;
+
 pub struct AppState {
     pub config: ConfigStore,
-    pub limiter: RateLimiter,
+    /// Per-process budget for the public push/ACME endpoints — local DoS
+    /// protection for this node's own buffers, intentionally not shared.
+    pub limiter: InMemoryLimiter,
+    /// Rate limiter backing `rate_limit` rules. Shared across the fleet when
+    /// `VEIL_RATELIMIT_REDIS_URL` is set, in-memory otherwise.
+    pub rule_limiter: RateLimiter,
     pub client: UpstreamClient,
+    /// Client for forwarding requests whose body was buffered for inspection.
+    pub buffered_client: BufferedClient,
     pub challenge: ChallengeEngine,
     /// Shared secret authenticating control-plane pushes. `None` disables
     /// the push receiver entirely (local-file mode).
@@ -74,6 +88,9 @@ pub struct AppState {
     pub cert_resolver: Option<Arc<crate::tls::DynamicCertResolver>>,
     /// Prometheus metrics, exposed on `GET /metrics`.
     pub metrics: crate::metrics::Metrics,
+    /// GeoIP/ASN databases for country/ASN enrichment. `None` when no MMDB is
+    /// configured (`VEIL_GEOIP_PATH` / `VEIL_GEOIP_ASN_PATH`).
+    pub geo: Option<crate::geoip::GeoDb>,
 }
 
 impl AppState {
@@ -85,6 +102,7 @@ impl AppState {
             push_key_from_env(),
         );
         state.analytics = analytics::buffer_from_env();
+        state.geo = crate::geoip::GeoDb::from_env();
         state
     }
 
@@ -111,8 +129,10 @@ impl AppState {
 
         Self {
             config: ConfigStore::new(config),
-            limiter: RateLimiter::new(),
+            limiter: InMemoryLimiter::new(),
+            rule_limiter: RateLimiter::in_memory(),
             client: Client::builder(TokioExecutor::new()).build_http(),
+            buffered_client: Client::builder(TokioExecutor::new()).build_http(),
             challenge: ChallengeEngine::new(cookie_name, cookie_ttl),
             node_token,
             push_hmac_key,
@@ -122,6 +142,7 @@ impl AppState {
             acme: AcmeStore::new(),
             cert_resolver: None,
             metrics: crate::metrics::Metrics::new(),
+            geo: None,
         }
     }
 }
@@ -168,7 +189,8 @@ pub async fn serve_with_shutdown(
                 let state = Arc::clone(&state);
                 let service = service_fn(move |req| {
                     let state = Arc::clone(&state);
-                    async move { Ok::<_, Infallible>(handle(req, peer, state).await) }
+                    // Plaintext HTTP carries no TLS ClientHello → no JA3.
+                    async move { Ok::<_, Infallible>(handle(req, peer, state, None).await) }
                 });
                 let conn = builder.serve_connection_with_upgrades(TokioIo::new(stream), service);
                 let conn = graceful.watch(conn.into_owned());
@@ -205,6 +227,9 @@ pub async fn serve_tls(
                 let (stream, peer) = accepted?;
                 let acceptor = acceptor.clone();
                 let state = Arc::clone(&state);
+                // Peek the ClientHello (MSG_PEEK, non-consuming) to compute the
+                // JA3 fingerprint before rustls runs the real handshake.
+                let ja3 = peek_ja3(&stream).await;
                 // Handshake inline; a failed handshake only costs this
                 // connection. Watched connections are tracked for draining.
                 let tls_stream = match acceptor.accept(stream).await {
@@ -216,7 +241,8 @@ pub async fn serve_tls(
                 };
                 let service = service_fn(move |req| {
                     let state = Arc::clone(&state);
-                    async move { Ok::<_, Infallible>(handle(req, peer, state).await) }
+                    let ja3 = ja3.clone();
+                    async move { Ok::<_, Infallible>(handle(req, peer, state, ja3).await) }
                 });
                 let conn = builder.serve_connection_with_upgrades(TokioIo::new(tls_stream), service);
                 let conn = graceful.watch(conn.into_owned());
@@ -249,13 +275,20 @@ pub async fn handle(
     req: Request<Incoming>,
     peer: SocketAddr,
     state: Arc<AppState>,
+    ja3: Option<String>,
 ) -> Response<ProxyBody> {
     let started = Instant::now();
     let ts_ms = analytics::now_ms();
     // Snapshot for the lifetime of this request; concurrent config pushes
     // never affect a request mid-flight.
     let config = state.config.load();
-    let ctx = inspector::inspect(&req, peer, config.trust_forwarded_headers);
+    let mut ctx = inspector::inspect(&req, peer, config.trust_forwarded_headers);
+    ctx.ja3 = ja3;
+    if let Some(geo) = &state.geo {
+        let info = geo.lookup(ctx.client_ip);
+        ctx.country = info.country;
+        ctx.asn = info.asn;
+    }
 
     // ── Reserved path: Prometheus metrics scrape ─────────────────────
     if req.method() == Method::GET && ctx.path == "/metrics" {
@@ -315,18 +348,75 @@ pub async fn handle(
         return response;
     };
 
-    let verdict = rules::evaluate(zone, &ctx, &state.limiter);
+    // Buffer the body for inspection only when the zone needs it (a body-regex
+    // condition or managed rules with body inspection) and the method can
+    // carry one. Everything else streams straight through.
+    let body_method = matches!(
+        *req.method(),
+        Method::POST | Method::PUT | Method::PATCH | Method::DELETE
+    );
+    let mut buffered: Option<Bytes> = None;
+    let source = if zone.needs_body_inspection() && body_method {
+        let declared = req
+            .headers()
+            .get(CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<usize>().ok());
+        if declared.is_some_and(|n| n > MAX_INSPECT_BODY) {
+            warn!(client_ip = %ctx.client_ip, "body exceeds inspection cap; forwarding without body inspection");
+            ForwardSource::Stream(req)
+        } else {
+            let (parts, incoming) = req.into_parts();
+            match Limited::new(incoming, MAX_INSPECT_BODY).collect().await {
+                Ok(collected) => {
+                    let bytes = collected.to_bytes();
+                    buffered = Some(bytes.clone());
+                    ForwardSource::Buffered(parts, bytes)
+                }
+                Err(_) => {
+                    // Body exceeded the cap mid-read (already consumed, can't
+                    // forward): reject rather than pass it un-inspected.
+                    let response = json_response(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        r#"{"error":"body_too_large","detail":"Request body exceeds inspection limit."}"#,
+                    );
+                    state.metrics.record_request("block", started.elapsed().as_secs_f64());
+                    record_request(&state, &ctx, &zone.name, "block", Some("body_too_large".to_owned()), response.status().as_u16(), ts_ms, started);
+                    return response;
+                }
+            }
+        }
+    } else {
+        ForwardSource::Stream(req)
+    };
+    let body_slice = buffered.as_deref();
+
+    // Custom rules first; if they allow, the managed signature set runs as a
+    // second phase over the URL, headers and (when buffered) the body.
+    let verdict = match rules::evaluate(zone, &ctx, &state.rule_limiter, body_slice).await {
+        Verdict::Allow => match &zone.managed_rules {
+            Some(managed) => match signatures::scan(managed, &ctx, body_slice) {
+                Some(category) => match managed.action {
+                    ManagedAction::Block => Verdict::Block { rule_id: format!("managed:{category}") },
+                    ManagedAction::Challenge => Verdict::Challenge { rule_id: format!("managed:{category}") },
+                },
+                None => Verdict::Allow,
+            },
+            None => Verdict::Allow,
+        },
+        other => other,
+    };
     let mut label = verdict.label();
     let rule_id = verdict.rule_id().map(str::to_owned);
 
     let response = match &verdict {
-        Verdict::Allow => forward_or_502(req, &ctx, &zone.upstream, &state).await,
+        Verdict::Allow => dispatch_forward(source, &ctx, &zone.upstream, &state).await,
         Verdict::Challenge { .. } => {
-            if state.challenge.verify_token(req.headers(), ctx.client_ip) {
+            if state.challenge.verify_token(&ctx.headers, ctx.client_ip) {
                 label = "challenge_pass";
-                forward_or_502(req, &ctx, &zone.upstream, &state).await
+                dispatch_forward(source, &ctx, &zone.upstream, &state).await
             } else {
-                state.challenge.issue_challenge(&ctx)
+                state.challenge.issue_challenge(&ctx, zone.challenge.as_ref())
             }
         }
         Verdict::Block { .. } => forbidden(ctx.wants_html()),
@@ -672,13 +762,37 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     left.iter().zip(right).fold(0u8, |acc, (l, r)| acc | (l ^ r)) == 0
 }
 
-async fn forward_or_502(
-    req: Request<Incoming>,
+/// Peeks the TLS ClientHello off the socket (without consuming it, so rustls
+/// still completes the handshake) and computes the JA3 fingerprint. A single
+/// peek captures the ClientHello in the common case; a truncated or unparsable
+/// record simply yields `None`.
+async fn peek_ja3(stream: &TcpStream) -> Option<String> {
+    let mut buf = [0u8; 2048];
+    let n = stream.peek(&mut buf).await.ok()?;
+    crate::tls::ja3::from_tls_record(&buf[..n]).map(|j| j.hash)
+}
+
+/// The request body to forward upstream: either streamed straight from the
+/// downstream connection, or buffered in memory after inspection.
+enum ForwardSource {
+    Stream(Request<Incoming>),
+    Buffered(hyper::http::request::Parts, Bytes),
+}
+
+async fn dispatch_forward(
+    source: ForwardSource,
     ctx: &crate::pipeline::RequestContext,
     upstream: &str,
     state: &AppState,
 ) -> Response<ProxyBody> {
-    match router::forward(req, ctx, upstream, &state.client).await {
+    let result = match source {
+        ForwardSource::Stream(req) => router::forward(req, ctx, upstream, &state.client).await,
+        ForwardSource::Buffered(parts, bytes) => {
+            let req = Request::from_parts(parts, Full::new(bytes));
+            router::forward(req, ctx, upstream, &state.buffered_client).await
+        }
+    };
+    match result {
         Ok(response) => response,
         Err(err) => {
             warn!(upstream, error = %err, "upstream request failed");

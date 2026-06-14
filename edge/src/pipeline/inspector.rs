@@ -37,8 +37,14 @@ pub fn inspect<B>(req: &Request<B>, peer: SocketAddr, trust_forwarded: bool) -> 
         host,
         method: req.method().clone(),
         path: req.uri().path().to_owned(),
+        query: req.uri().query().map(str::to_owned),
         user_agent,
         headers: req.headers().clone(),
+        // Filled in by the proxy after inspection when a GeoIP database is
+        // loaded; the inspector itself has no geo state.
+        country: None,
+        asn: None,
+        ja3: None,
     }
 }
 

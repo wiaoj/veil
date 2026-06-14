@@ -17,6 +17,12 @@ public sealed class User : Aggregate<UserId> {
     public bool IsDisabled { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
+    /// <summary>Consecutive failed login attempts since the last success.</summary>
+    public int FailedLoginAttempts { get; private set; }
+
+    /// <summary>When set and in the future, login is rejected (lockout).</summary>
+    public DateTimeOffset? LockedUntilUtc { get; private set; }
+
     private User() { }
 
     public static Result<User> Create(
@@ -66,5 +72,28 @@ public sealed class User : Aggregate<UserId> {
     public Result<Success> Enable() {
         this.IsDisabled = false;
         return Result.Success();
+    }
+
+    /// <summary>Whether the account is currently locked out at <paramref name="now"/>.</summary>
+    public bool IsLockedOut(DateTimeOffset now) =>
+        this.LockedUntilUtc is { } until && until > now;
+
+    /// <summary>
+    /// Records a failed login. After <paramref name="maxAttempts"/> consecutive
+    /// failures the account is locked for <paramref name="lockoutDuration"/>
+    /// and the counter resets, so the lockout re-arms cleanly on the next miss.
+    /// </summary>
+    public void RegisterFailedLogin(DateTimeOffset now, int maxAttempts, TimeSpan lockoutDuration) {
+        this.FailedLoginAttempts++;
+        if(this.FailedLoginAttempts >= maxAttempts) {
+            this.LockedUntilUtc = now + lockoutDuration;
+            this.FailedLoginAttempts = 0;
+        }
+    }
+
+    /// <summary>Clears the failed-attempt counter and any lockout after a success.</summary>
+    public void RegisterSuccessfulLogin() {
+        this.FailedLoginAttempts = 0;
+        this.LockedUntilUtc = null;
     }
 }

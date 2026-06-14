@@ -2,6 +2,7 @@ pub mod acme;
 pub mod analytics;
 pub mod challenge;
 pub mod config;
+pub mod geoip;
 pub mod metrics;
 pub mod pipeline;
 pub mod proxy;

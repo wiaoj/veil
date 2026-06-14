@@ -34,13 +34,20 @@ public sealed class AuthModule : IWebModule {
             .UseDddInterceptors<AuthDbContext>(sp));
 
         services.AddSingleton<JwtTokenService>();
+        services.AddSingleton<Audit.IAuditLogger, Audit.AuditLogger>();
         services.AddHostedService<AdminSeeder>();
 
-        // Without a signing key the module cannot validate or issue tokens —
+        // Signing key ring (supports zero-downtime rotation via versioned
+        // keys). Registered in DI so JwtTokenService signs with the active
+        // key; the same ring drives JWT validation below.
+        AuthOptions authOptions = configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>() ?? new AuthOptions();
+        SigningKeyRing keyRing = new(authOptions);
+        services.AddSingleton(keyRing);
+
+        // Without any signing key the module cannot validate or issue tokens —
         // authentication stays unregistered and every endpoint remains open.
         // Acceptable only for throwaway dev setups.
-        string? signingKey = configuration[$"{AuthOptions.SectionName}:SigningKey"];
-        if(string.IsNullOrEmpty(signingKey))
+        if(!keyRing.HasKeys)
             return;
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -48,7 +55,8 @@ public sealed class AuthModule : IWebModule {
                 options.TokenValidationParameters = new TokenValidationParameters {
                     ValidIssuer = configuration[$"{AuthOptions.SectionName}:Issuer"] ?? new AuthOptions().Issuer,
                     ValidAudience = configuration[$"{AuthOptions.SectionName}:Audience"] ?? new AuthOptions().Audience,
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+                    // All ring keys validate; the token's `kid` selects which.
+                    IssuerSigningKeys = keyRing.ValidationKeys,
                     ValidateIssuer = true,
                     ValidateAudience = true,
                     ValidateLifetime = true,

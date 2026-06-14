@@ -11,6 +11,13 @@
 		<PackageReference Include="Wiaoj.Primitives" Version="0.0.1-alpha.75" />
 		<PackageReference Include="Wiaoj.Results" Version="0.0.1-alpha.75" />
 		<PackageReference Include="Wiaoj.Results.AspNetCore" Version="0.0.1-alpha.75" />
+
+		<!-- OpenTelemetry (Phase 8) — opt-in via OTEL_EXPORTER_OTLP_ENDPOINT -->
+		<PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
+		<PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
+		<PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
+		<PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
+		<PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
 	</ItemGroup>
 
 	<ItemGroup>

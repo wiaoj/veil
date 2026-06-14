@@ -72,8 +72,12 @@ mod tests {
             host: "example.com".to_owned(),
             method: Method::GET,
             path: "/".to_owned(),
+            query: None,
             user_agent: user_agent.map(str::to_owned),
             headers,
+            country: None,
+            asn: None,
+            ja3: None,
         }
     }
 

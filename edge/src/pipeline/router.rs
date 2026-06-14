@@ -4,8 +4,8 @@
 //! hyper-util's legacy client already pools connections per host, which is
 //! enough for a single upstream per zone.
 
-use http_body_util::BodyExt;
-use hyper::body::Incoming;
+use http_body_util::{BodyExt, Full};
+use hyper::body::{Body, Bytes, Incoming};
 use hyper::header::{HeaderValue, CONNECTION, HOST};
 use hyper::{Request, Response, Uri, Version};
 use hyper_util::client::legacy::connect::HttpConnector;
@@ -15,14 +15,26 @@ use crate::response::ProxyBody;
 
 use super::RequestContext;
 
+/// Client for streamed (un-inspected) request bodies.
 pub type UpstreamClient = Client<HttpConnector, Incoming>;
+/// Client for buffered bodies — used after body inspection, where the body
+/// has already been read into memory.
+pub type BufferedClient = Client<HttpConnector, Full<Bytes>>;
 
-pub async fn forward(
-    req: Request<Incoming>,
+/// Forwards a request to the zone upstream. Generic over the body type so both
+/// the streamed (`Incoming`) and buffered (`Full<Bytes>`, post-inspection)
+/// paths share one implementation.
+pub async fn forward<B>(
+    req: Request<B>,
     ctx: &RequestContext,
     upstream: &str,
-    client: &UpstreamClient,
-) -> Result<Response<ProxyBody>, Box<dyn std::error::Error + Send + Sync>> {
+    client: &Client<HttpConnector, B>,
+) -> Result<Response<ProxyBody>, Box<dyn std::error::Error + Send + Sync>>
+where
+    B: Body + Send + Unpin + 'static,
+    B::Data: Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     let (mut parts, body) = req.into_parts();
 
     let path_and_query = parts

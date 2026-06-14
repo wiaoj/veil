@@ -35,6 +35,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut state = AppState::new(config);
 
+    // Rate-limit backend (Phase 2.5) — shared Redis counters when
+    // VEIL_RATELIMIT_REDIS_URL is set, per-process otherwise.
+    state.rule_limiter = veil_edge::pipeline::rate_limit::RateLimiter::from_env().await;
+
     // TLS termination (Phase 2.2 + 5) — VEIL_TLS_CERT/KEY provide a static
     // fallback pair; VEIL_LISTEN_HTTPS alone starts an SNI-only listener fed
     // by control-plane-pushed zone certificates.

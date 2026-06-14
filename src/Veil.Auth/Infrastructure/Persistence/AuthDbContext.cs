@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Veil.Auth.Audit;
 using Veil.Auth.Domain;
 using Wiaoj.Ddd.EntityFrameworkCore;
 
@@ -8,6 +9,7 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
     public DbSet<User> Users => Set<User>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) {
         modelBuilder.HasDefaultSchema("auth");

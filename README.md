@@ -20,6 +20,10 @@ Client → TLS Termination → Inspector → Rule Engine → Router → Upstream
 
 Every decision happens in-process at the edge node, in microseconds, without a round-trip to the control plane. Rules are pushed to edge nodes on change and held in memory. The control plane only handles configuration, analytics ingestion, and certificate management — it is never in the hot path.
 
+### Scope: Layer 7 only
+
+Veil is an **application-layer (L7)** WAF and bot-mitigation proxy: it inspects HTTP requests, applies rules and managed signatures, challenges suspicious clients, and rate-limits. It does **not** handle volumetric **L3/L4 DDoS** (SYN floods, UDP/amplification, raw packet floods) — those are absorbed at the network layer (your cloud provider's DDoS protection, an anycast scrubbing layer, or kernel/eBPF/firewall in front of the edge). Deploy Veil behind that layer; it protects against L7 abuse (HTTP floods, scrapers, credential stuffing, injection/XSS), not link saturation.
+
 ---
 
 ## Architecture Overview
@@ -119,6 +123,8 @@ The control plane maintains the authoritative configuration in PostgreSQL. When 
 ---
 
 ## Getting Started
+
+> 📖 Full setup, configuration and operations reference: **[docs/USAGE.md](docs/USAGE.md)**.
 
 ### Prerequisites
 
