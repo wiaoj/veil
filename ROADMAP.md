@@ -283,9 +283,9 @@
 
 ## Phase 10 — Post-Launch
 
-- [ ] IP reputation feed integration
-- [ ] Multi-tenant zone ownership (organisations, member roles)
-- [ ] Terraform provider
-- [ ] Webhook support (attack detection, challenge threshold breach)
+- [x] Shadow mode — per-zone `shadow` flag (`edge`): rules + managed signatures are evaluated and the would-be verdict is logged (`shadow_block`/`shadow_challenge`/`shadow_rate_limited`), but every request is forwarded. Zero-risk validation of a rule set against live traffic
+- [x] IP reputation feed integration — edge denylist of IPs/CIDRs from `VEIL_IP_REPUTATION_PATH` (`edge/src/reputation.rs`); checked after the zone's own rules so allow/block rules keep precedence. Matches block as `ip_reputation`
+- [ ] Webhook support (attack detection, challenge threshold breach) — design for threshold + cooldown to avoid amplification
 - [ ] Log export to external SIEM
-- [ ] Shadow mode — simulate rule set without enforcing
+- [ ] Multi-tenant zone ownership (organisations, member roles) — large: org ownership across auth + all aggregates
+- [ ] Terraform provider — separate Go project

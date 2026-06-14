@@ -60,6 +60,11 @@ pub struct Zone {
     /// Absent → no managed inspection for this zone.
     #[serde(default)]
     pub managed_rules: Option<ManagedRules>,
+    /// Shadow (dry-run) mode: rules and managed signatures are evaluated and
+    /// the would-be verdict is logged, but nothing is enforced — every request
+    /// is forwarded. Lets a rule set be validated against live traffic first.
+    #[serde(default)]
+    pub shadow: bool,
 }
 
 impl Zone {

@@ -6,5 +6,6 @@ pub mod geoip;
 pub mod metrics;
 pub mod pipeline;
 pub mod proxy;
+pub mod reputation;
 pub mod response;
 pub mod tls;

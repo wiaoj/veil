@@ -91,6 +91,8 @@ pub struct AppState {
     /// GeoIP/ASN databases for country/ASN enrichment. `None` when no MMDB is
     /// configured (`VEIL_GEOIP_PATH` / `VEIL_GEOIP_ASN_PATH`).
     pub geo: Option<crate::geoip::GeoDb>,
+    /// IP reputation denylist (`VEIL_IP_REPUTATION_PATH`). `None` when unset.
+    pub reputation: Option<crate::reputation::IpReputation>,
 }
 
 impl AppState {
@@ -103,6 +105,7 @@ impl AppState {
         );
         state.analytics = analytics::buffer_from_env();
         state.geo = crate::geoip::GeoDb::from_env();
+        state.reputation = crate::reputation::IpReputation::from_env();
         state
     }
 
@@ -143,6 +146,7 @@ impl AppState {
             cert_resolver: None,
             metrics: crate::metrics::Metrics::new(),
             geo: None,
+            reputation: None,
         }
     }
 }
@@ -406,28 +410,55 @@ pub async fn handle(
         },
         other => other,
     };
-    let mut label = verdict.label();
+
+    // IP reputation denylist runs last, only on otherwise-allowed traffic, so
+    // explicit allow/block rules and managed signatures keep precedence.
+    let verdict = match verdict {
+        Verdict::Allow
+            if state.reputation.as_ref().is_some_and(|r| r.contains(ctx.client_ip)) =>
+        {
+            Verdict::Block { rule_id: "ip_reputation".to_owned() }
+        }
+        other => other,
+    };
+
     let rule_id = verdict.rule_id().map(str::to_owned);
 
-    let response = match &verdict {
-        Verdict::Allow => dispatch_forward(source, &ctx, &zone.upstream, &state).await,
-        Verdict::Challenge { .. } => {
-            if state.challenge.verify_token(&ctx.headers, ctx.client_ip) {
-                label = "challenge_pass";
-                dispatch_forward(source, &ctx, &zone.upstream, &state).await
-            } else {
-                state.challenge.issue_challenge(&ctx, zone.challenge.as_ref())
+    // Shadow (dry-run) mode: a non-allow verdict is logged as what *would* have
+    // happened, but the request is forwarded anyway — zero-risk validation of a
+    // rule set against live traffic.
+    let shadowed = zone.shadow && !matches!(verdict, Verdict::Allow);
+    let mut label = verdict.label();
+
+    let response = if shadowed {
+        label = match verdict {
+            Verdict::Block { .. } => "shadow_block",
+            Verdict::Challenge { .. } => "shadow_challenge",
+            Verdict::RateLimited { .. } => "shadow_rate_limited",
+            Verdict::Allow => "allow",
+        };
+        dispatch_forward(source, &ctx, &zone.upstream, &state).await
+    } else {
+        match &verdict {
+            Verdict::Allow => dispatch_forward(source, &ctx, &zone.upstream, &state).await,
+            Verdict::Challenge { .. } => {
+                if state.challenge.verify_token(&ctx.headers, ctx.client_ip) {
+                    label = "challenge_pass";
+                    dispatch_forward(source, &ctx, &zone.upstream, &state).await
+                } else {
+                    state.challenge.issue_challenge(&ctx, zone.challenge.as_ref())
+                }
             }
-        }
-        Verdict::Block { .. } => forbidden(ctx.wants_html()),
-        Verdict::RateLimited { rule_id } => {
-            let retry_after = zone
-                .rules
-                .iter()
-                .find(|r| &r.id == rule_id)
-                .and_then(|r| r.rate_limit)
-                .map_or(60, |p| p.window_secs);
-            rate_limited(retry_after, ctx.wants_html())
+            Verdict::Block { .. } => forbidden(ctx.wants_html()),
+            Verdict::RateLimited { rule_id } => {
+                let retry_after = zone
+                    .rules
+                    .iter()
+                    .find(|r| &r.id == rule_id)
+                    .and_then(|r| r.rate_limit)
+                    .map_or(60, |p| p.window_secs);
+                rate_limited(retry_after, ctx.wants_html())
+            }
         }
     };
 

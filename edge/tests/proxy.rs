@@ -691,3 +691,40 @@ async fn managed_rules_block_xss_in_body() {
     let blocked = post("text=<script>steal(document.cookie)</script>").await.unwrap();
     assert_eq!(blocked.status(), StatusCode::FORBIDDEN);
 }
+
+// ── Shadow (dry-run) mode ────────────────────────────────────────────
+
+async fn spawn_proxy_shadow(upstream: SocketAddr) -> SocketAddr {
+    let config = Config::from_json(&format!(
+        r#"{{
+            "zones": [{{
+                "name": "shadow",
+                "hosts": ["*"],
+                "upstream": "http://{upstream}",
+                "shadow": true,
+                "rules": [
+                    {{"id": "block-admin", "priority": 10, "action": "block",
+                      "conditions": [{{"type": "path_prefix", "value": "/admin"}}]}}
+                ]
+            }}]
+        }}"#
+    ))
+    .unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(proxy::serve(listener, Arc::new(AppState::new(config))));
+    addr
+}
+
+#[tokio::test]
+async fn shadow_mode_logs_but_does_not_enforce() {
+    let upstream = spawn_upstream().await;
+    let proxy = spawn_proxy_shadow(upstream).await;
+    let client = client();
+
+    // The block rule matches /admin, but in shadow mode the request is still
+    // forwarded to the upstream (200) instead of being blocked (403).
+    let response = get(&client, proxy, "/admin/panel").await;
+    assert_eq!(response.status(), StatusCode::OK);
+}

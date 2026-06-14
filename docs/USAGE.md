@@ -185,7 +185,16 @@ Per-rule, per-IP sliding window. Set `VEIL_RATELIMIT_REDIS_URL` on edge nodes to
 share counters across the fleet (atomic Lua); unset → per-process. Redis errors
 fail open.
 
-### 4.5 Challenge tiers
+### 4.5 Shadow mode & IP reputation
+- **Shadow mode** — set `"shadow": true` on a zone to dry-run it: rules and
+  managed signatures are evaluated and the would-be verdict is logged
+  (`shadow_block`, `shadow_challenge`, `shadow_rate_limited`) but every request
+  is forwarded. Use it to validate a new rule set against live traffic risk-free.
+- **IP reputation** — point `VEIL_IP_REPUTATION_PATH` at a file of bad IPs/CIDRs
+  (one per line, `#` comments). Listed client IPs are blocked (`ip_reputation`)
+  *after* the zone's own rules, so allow/block rules keep precedence.
+
+### 4.6 Challenge tiers
 - **Tier 1** — Proof-of-Work (WASM), difficulty scaled by a risk score.
 - **Tier 2** — when the risk score ≥ `challenge.tier2_risk_threshold`: elevated
   PoW **plus** a behavioural interaction check (mouse/touch telemetry scored
