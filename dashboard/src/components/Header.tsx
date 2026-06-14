@@ -44,6 +44,13 @@ export default function Header() {
           >
             Sertifikalar
           </Link>
+          <Link
+            to="/live"
+            className="nav-link"
+            activeProps={{ className: 'nav-link is-active' }}
+          >
+            Canlı
+          </Link>
         </div>
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">

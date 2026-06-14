@@ -109,6 +109,57 @@ export async function apiSend<T = unknown>(
   throw new UnauthorizedError()
 }
 
+/**
+ * Opens an authenticated Server-Sent Events stream and invokes `onEvent` for
+ * each `data:` payload (parsed as JSON). Uses fetch + a stream reader (not
+ * EventSource) so the Bearer header and refresh-retry apply. Resolves when
+ * the stream ends or `signal` aborts; throws UnauthorizedError on 401.
+ */
+export async function apiStream<T>(
+  path: string,
+  onEvent: (data: T) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const access = window.localStorage.getItem(ACCESS_KEY)
+    const response = await fetch(path, {
+      headers: access ? { Authorization: `Bearer ${access}` } : {},
+      signal,
+    })
+    if (response.status === 401) {
+      if (attempt === 0 && (await tryRefresh())) continue
+      clearSession()
+      throw new UnauthorizedError()
+    }
+    if (!response.ok || response.body === null) throw new Error(`API ${response.status}: ${path}`)
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) return
+      buffer += decoder.decode(value, { stream: true })
+      // SSE frames are separated by a blank line.
+      let sep: number
+      while ((sep = buffer.indexOf('\n\n')) !== -1) {
+        const frame = buffer.slice(0, sep)
+        buffer = buffer.slice(sep + 2)
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('data:')) {
+            try {
+              onEvent(JSON.parse(line.slice(5).trim()) as T)
+            } catch {
+              // Ignore malformed frames (e.g. the initial ": connected").
+            }
+          }
+        }
+      }
+    }
+  }
+  throw new UnauthorizedError()
+}
+
 // ── Response shapes (mirror the control plane contracts) ─────────────
 
 export interface ZoneSummary {
@@ -213,6 +264,16 @@ export interface ChallengeStatsResponse {
   issued: number
   passed: number
   passRate: number
+}
+
+export interface LiveLogEvent {
+  tsMs: number
+  zone: string
+  method: string
+  path: string
+  status: number
+  verdict: string
+  clientIp: string
 }
 
 export interface CertificateSummary {

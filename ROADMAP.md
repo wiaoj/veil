@@ -231,8 +231,8 @@
 - [x] Config push log viewer (`GET /v1/edge-nodes/{id}/push-log`, paginated)
 
 ### 7.5 Real-time traffic view
-- [ ] WebSocket connection
-- [ ] Live request log stream
+- [x] Live stream transport — Server-Sent Events (`GET /v1/analytics/stream`), one-way so SSE over the existing JWT/HTTP path beats WS/SignalR; fetch+stream reader on the client keeps Bearer auth + reconnect
+- [x] Live request log stream — `/live` dashboard view: connect-forward tail (last 100), pause, auto-reconnect; control plane short-polls ClickHouse per connection cursor
 
 ### 7.6 Certificates
 - [x] Certificate list (status, expiry countdown) + request form
