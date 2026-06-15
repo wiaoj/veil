@@ -280,17 +280,25 @@ Benchmarks are run against a single edge node on commodity hardware (4 vCPU, 8GB
 
 ## Roadmap
 
+> Phase-by-phase status lives in [`ROADMAP.md`](ROADMAP.md). High-level summary:
+
 - [x] Core proxy pipeline (TLS, inspect, route)
 - [x] Zone and rule management API
-- [x] JS proof-of-work challenge engine
-- [ ] hCaptcha integration (Tier 2 challenge)
-- [ ] Automatic certificate issuance (ACME)
-- [ ] ClickHouse analytics pipeline
-- [ ] Dashboard — rule builder UI
-- [ ] Dashboard — real-time traffic view (WebSocket)
-- [ ] Kubernetes DaemonSet packaging
-- [ ] IP reputation feed integration
-- [ ] Multi-tenant zone ownership
+- [x] WASM proof-of-work challenge engine (risk-scored difficulty)
+- [x] Self-hosted behavioural Tier 2 challenge
+- [x] Automatic certificate issuance + renewal (ACME)
+- [x] ClickHouse analytics pipeline + nightly aggregation
+- [x] Dashboard — multi-condition rule builder + reordering
+- [x] Dashboard — real-time traffic view (SSE)
+- [x] Kubernetes DaemonSet packaging + HPA
+- [x] IP reputation feed integration
+- [x] Managed WAF signature set (OWASP-CRS-style)
+- [x] Shadow mode, attack webhooks, SIEM log export
+- [ ] AI-assisted live traffic analysis (anomaly detection + attack summaries)
+- [ ] hCaptcha/Turnstile as optional pluggable Tier 2 backend
+- [ ] Integration test suite (Testcontainers)
+- [ ] Multi-tenant zone ownership (organisations, member roles)
+- [ ] Terraform provider
 
 ---
 

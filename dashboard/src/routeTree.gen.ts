@@ -13,6 +13,7 @@ import { Route as ZonesRouteImport } from './routes/zones'
 import { Route as NodesRouteImport } from './routes/nodes'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LiveRouteImport } from './routes/live'
+import { Route as IntelligenceRouteImport } from './routes/intelligence'
 import { Route as CertificatesRouteImport } from './routes/certificates'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
@@ -38,6 +39,11 @@ const LoginRoute = LoginRouteImport.update({
 const LiveRoute = LiveRouteImport.update({
   id: '/live',
   path: '/live',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntelligenceRoute = IntelligenceRouteImport.update({
+  id: '/intelligence',
+  path: '/intelligence',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CertificatesRoute = CertificatesRouteImport.update({
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/certificates': typeof CertificatesRoute
+  '/intelligence': typeof IntelligenceRoute
   '/live': typeof LiveRoute
   '/login': typeof LoginRoute
   '/nodes': typeof NodesRouteWithChildren
@@ -87,6 +94,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/certificates': typeof CertificatesRoute
+  '/intelligence': typeof IntelligenceRoute
   '/live': typeof LiveRoute
   '/login': typeof LoginRoute
   '/nodes': typeof NodesRouteWithChildren
@@ -100,6 +108,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/certificates': typeof CertificatesRoute
+  '/intelligence': typeof IntelligenceRoute
   '/live': typeof LiveRoute
   '/login': typeof LoginRoute
   '/nodes': typeof NodesRouteWithChildren
@@ -114,6 +123,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/certificates'
+    | '/intelligence'
     | '/live'
     | '/login'
     | '/nodes'
@@ -126,6 +136,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/certificates'
+    | '/intelligence'
     | '/live'
     | '/login'
     | '/nodes'
@@ -138,6 +149,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/certificates'
+    | '/intelligence'
     | '/live'
     | '/login'
     | '/nodes'
@@ -151,6 +163,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   CertificatesRoute: typeof CertificatesRoute
+  IntelligenceRoute: typeof IntelligenceRoute
   LiveRoute: typeof LiveRoute
   LoginRoute: typeof LoginRoute
   NodesRoute: typeof NodesRouteWithChildren
@@ -185,6 +198,13 @@ declare module '@tanstack/react-router' {
       path: '/live'
       fullPath: '/live'
       preLoaderRoute: typeof LiveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/intelligence': {
+      id: '/intelligence'
+      path: '/intelligence'
+      fullPath: '/intelligence'
+      preLoaderRoute: typeof IntelligenceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/certificates': {
@@ -258,6 +278,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   CertificatesRoute: CertificatesRoute,
+  IntelligenceRoute: IntelligenceRoute,
   LiveRoute: LiveRoute,
   LoginRoute: LoginRoute,
   NodesRoute: NodesRouteWithChildren,

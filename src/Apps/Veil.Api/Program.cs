@@ -102,6 +102,10 @@ builder.Services.AddHttpClient(ConfigSyncService.HttpClientName,
     client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHostedService<ConfigSyncService>();
 
+// HTTP client for the intelligence-incidents proxy → analytics worker.
+builder.Services.AddHttpClient(Veil.Api.Internal.IntelligenceEndpoints.HttpClientName,
+    client => client.Timeout = TimeSpan.FromSeconds(5));
+
 // ACME: provisions/renews certificates, publishing HTTP-01 challenges to
 // edge nodes. Idles unless Certificates:AcmeDirectoryUrl + EncryptionKey set.
 builder.Services.AddSingleton<Veil.Api.Acme.EdgeChallengePublisher>();
@@ -120,6 +124,9 @@ await app.UseModulithAsync();
 
 // Internal control-plane → edge endpoints (node-token authenticated).
 Veil.Api.Internal.EdgeConfigEndpoints.Map(app);
+
+// Dashboard-facing proxy to the analytics worker's live AI incident feed.
+Veil.Api.Internal.IntelligenceEndpoints.Map(app);
 
 // Liveness vs readiness — both bypass the fallback auth policy so probes
 // work without credentials.

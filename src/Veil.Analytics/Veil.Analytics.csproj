@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="Npgsql" Version="10.0.2" />
+    <PackageReference Include="Microsoft.ML.TimeSeries" Version="4.0.2" />
   </ItemGroup>
 
   <ItemGroup>

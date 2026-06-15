@@ -1,5 +1,6 @@
 using Veil.Analytics.Contracts;
 using Veil.Analytics.Ingestion;
+using Veil.Analytics.Intelligence;
 using Veil.EdgeNodes.Contracts;
 using IHttpResult = Microsoft.AspNetCore.Http.IResult;
 
@@ -24,6 +25,7 @@ public static class IngestEndpoints {
         HttpRequest request,
         IEdgeNodeTokenVerifier tokenVerifier,
         RequestLogQueue queue,
+        ITrafficAnalyzer analyzer,
         TimeProvider timeProvider,
         CancellationToken cancellationToken) {
 
@@ -44,6 +46,10 @@ public static class IngestEndpoints {
         List<RequestLogRow> rows = IngestNormalizer.Normalize(
             payload.NodeId, payload.Records, timeProvider.GetUtcNow());
         queue.Enqueue(rows);
+
+        // Live, in-memory tap for AI anomaly analysis. No-op when intelligence is
+        // disabled; otherwise just lock-guarded counter bumps — never blocks ingest.
+        analyzer.Observe(rows);
 
         return Results.Accepted(value: new IngestResponse(rows.Count));
     }
