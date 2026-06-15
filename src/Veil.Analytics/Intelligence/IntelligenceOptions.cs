@@ -78,4 +78,18 @@ public sealed record IntelligenceOptions {
     /// <summary>Requests/window for an enforced rate_limit rule (the suggestion carries no numbers).</summary>
     public int DefaultRateLimitRequests { get; init; } = 100;
     public int DefaultRateLimitWindowSeconds { get; init; } = 60;
+
+    // --- Alerting (incident → webhook / SIEM) ---
+
+    /// <summary>Webhook URL that receives the incident as JSON. Unset → no webhook.</summary>
+    public string? WebhookUrl { get; init; }
+
+    /// <summary>Optional webhook auth header name, e.g. <c>Authorization</c>.</summary>
+    public string? WebhookAuthHeader { get; init; }
+
+    /// <summary>Optional webhook auth header value.</summary>
+    public string? WebhookAuthValue { get; init; }
+
+    /// <summary>Mirror incidents to the configured SIEM endpoint (reuses the <c>Siem</c> section).</summary>
+    public bool MirrorIncidentsToSiem { get; init; } = true;
 }

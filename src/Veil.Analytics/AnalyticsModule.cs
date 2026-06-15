@@ -72,6 +72,19 @@ public sealed class AnalyticsModule : IModule {
                 services.AddSingleton<IRuleApplier, LoggingRuleApplier>();
             }
 
+            // Alerting (Phase 11.3): incident → webhook + SIEM mirror. Active only
+            // when a sink is configured, else a no-op.
+            bool siemConfigured = intelligence.MirrorIncidentsToSiem
+                && !string.IsNullOrWhiteSpace(configuration.GetSection(SiemOptions.SectionName)[nameof(SiemOptions.Endpoint)]);
+            if(!string.IsNullOrWhiteSpace(intelligence.WebhookUrl) || siemConfigured) {
+                services.AddHttpClient(WebhookSiemAlerter.HttpClientName,
+                    client => client.Timeout = TimeSpan.FromSeconds(10));
+                services.AddSingleton<IIncidentAlerter, WebhookSiemAlerter>();
+            }
+            else {
+                services.AddSingleton<IIncidentAlerter, NullIncidentAlerter>();
+            }
+
             services.AddHostedService<TrafficAnalysisService>();
         }
         else {

@@ -15,6 +15,7 @@ public sealed class TrafficAnalysisService(
     ITrafficAnalyzer analyzer,
     IAnalystClient analyst,
     IRuleApplier ruleApplier,
+    IIncidentAlerter alerter,
     IncidentStore store,
     TimeProvider timeProvider,
     IOptions<IntelligenceOptions> options,
@@ -50,6 +51,7 @@ public sealed class TrafficAnalysisService(
             incident.Verdict = await analyst.AnalyzeAsync(incident, cancellationToken);
             incident.Action = await DecideAndActAsync(incident, cancellationToken);
             store.Add(incident);
+            await alerter.AlertAsync(incident, cancellationToken);
 
             logger.LogInformation(
                 "Anomaly in zone {Zone} (score {Score}): {Classification} — {Action}",
