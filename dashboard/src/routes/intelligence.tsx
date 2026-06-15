@@ -1,10 +1,13 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
 import type { TrafficIncident } from '#/lib/api'
-import { useApiData } from '#/lib/useApiData'
+import { UnauthorizedError, apiGet, hasSession } from '#/lib/api'
 
 export const Route = createFileRoute('/intelligence')({
   component: IntelligencePage,
 })
+
+const REFRESH_MS = 10_000
 
 const ACTION_TONE: Record<string, string> = {
   Enforced: 'text-red-600',
@@ -85,17 +88,51 @@ function IncidentCard({ incident }: { incident: TrafficIncident }) {
 }
 
 function IntelligencePage() {
-  const { data, error, loading } = useApiData<Array<TrafficIncident>>(
-    '/v1/intelligence/incidents?limit=50',
-  )
+  const navigate = useNavigate()
+  const [data, setData] = useState<Array<TrafficIncident> | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!hasSession()) {
+      navigate({ to: '/login' })
+      return
+    }
+    let cancelled = false
+
+    async function poll() {
+      try {
+        const result = await apiGet<Array<TrafficIncident>>('/v1/intelligence/incidents?limit=50')
+        if (cancelled) return
+        setData(result)
+        setError(null)
+      } catch (err) {
+        if (cancelled) return
+        if (err instanceof UnauthorizedError) {
+          navigate({ to: '/login' })
+          return
+        }
+        setError(err instanceof Error ? err.message : 'İstek başarısız.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    void poll()
+    const timer = setInterval(poll, REFRESH_MS)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [navigate])
 
   return (
     <main className="mx-auto max-w-4xl space-y-4 px-4 py-8">
       <div>
         <h1 className="text-2xl font-semibold">Yapay zeka analizi</h1>
         <p className="mt-1 text-sm text-gray-500">
-          ML.NET tabanlı canlı anomali tespiti. Her olay bellekte saptanır; yüksek güvenli
-          öneriler enforce, diğerleri shadow modunda denenir.
+          ML.NET tabanlı canlı anomali tespiti ({REFRESH_MS / 1000}s'de bir yenilenir). Her olay
+          bellekte saptanır; yüksek güvenli öneriler enforce, diğerleri shadow modunda denenir.
         </p>
       </div>
 
