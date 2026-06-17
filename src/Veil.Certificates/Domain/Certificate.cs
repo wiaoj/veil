@@ -1,23 +1,26 @@
 using Veil.Certificates.Domain.Enums;
 using Veil.Certificates.Domain.Events;
 using Veil.Certificates.Domain.ValueObjects;
+using Wiaoj.Security;
 
 namespace Veil.Certificates.Domain;
 
 /// <summary>
 /// TLS certificate lifecycle for a single hostname. The private key is stored
-/// AES-256-GCM encrypted (<see cref="EncryptedPrivateKey"/>); the plaintext
-/// key never touches the database. Provisioning is asynchronous: a request
-/// starts in <see cref="CertificateStatus.Pending"/> and the ACME worker
-/// moves it to Active or Failed.
+/// encrypted via <see cref="ISecretProtector{PrivateKeySecretContext}"/>; the
+/// plaintext key never touches the database. Provisioning is asynchronous: a
+/// request starts in <see cref="CertificateStatus.Pending"/> and the ACME
+/// worker moves it to Active or Failed.
 /// </summary>
 public sealed class Certificate : Aggregate<CertificateId> {
     public string Hostname { get; private set; }
     public CertificateStatus Status { get; private set; }
     /// <summary>PEM certificate chain (leaf first). Null until issued.</summary>
     public string? ChainPem { get; private set; }
-    /// <summary>AES-256-GCM ciphertext of the PEM private key, base64. Null until issued.</summary>
-    public string? EncryptedPrivateKey { get; private set; }
+    /// <summary>Encrypted PEM private key managed by Wiaoj.Security. Null until issued.</summary>
+    public EncryptedSecret<PrivateKeySecretContext>? EncryptedPrivateKey { get; private set; }
+    /// <summary>Tracks which encryption key version protects the private key.</summary>
+    public int EncryptedPrivateKeyVersion { get; private set; }
     public DateTimeOffset RequestedAtUtc { get; private set; }
     public DateTimeOffset? IssuedAtUtc { get; private set; }
     public DateTimeOffset? ExpiresAtUtc { get; private set; }
@@ -41,17 +44,18 @@ public sealed class Certificate : Aggregate<CertificateId> {
     /// <summary>Completes a pending order or an in-place renewal.</summary>
     public Result<Success> MarkIssued(
         string chainPem,
-        string encryptedPrivateKey,
+        EncryptedSecret<PrivateKeySecretContext> encryptedPrivateKey,
         DateTimeOffset issuedAtUtc,
         DateTimeOffset expiresAtUtc) {
         if(this.Status is not (CertificateStatus.Pending or CertificateStatus.Active or CertificateStatus.Failed))
             return CertificateErrors.NotPending;
 
-        if(string.IsNullOrWhiteSpace(chainPem) || string.IsNullOrWhiteSpace(encryptedPrivateKey))
+        if(string.IsNullOrWhiteSpace(chainPem))
             return CertificateErrors.MaterialEmpty;
 
         this.ChainPem = chainPem;
         this.EncryptedPrivateKey = encryptedPrivateKey;
+        this.EncryptedPrivateKeyVersion = encryptedPrivateKey.KeyVersion.Value;
         this.IssuedAtUtc = issuedAtUtc;
         this.ExpiresAtUtc = expiresAtUtc;
         this.Status = CertificateStatus.Active;
@@ -82,7 +86,14 @@ public sealed class Certificate : Aggregate<CertificateId> {
         if(this.Status is not CertificateStatus.Active)
             return CertificateErrors.NotActive;
         this.Status = CertificateStatus.Revoked;
+        RaiseDomainEvent(new CertificateRevokedDomainEvent(this.Id, this.Hostname));
         return Result.Success();
+    }
+
+    /// <summary>Re-encrypts the private key with the current active encryption key.</summary>
+    public void RotatePrivateKey(EncryptedSecret<PrivateKeySecretContext> rotatedKey) {
+        this.EncryptedPrivateKey = rotatedKey;
+        this.EncryptedPrivateKeyVersion = rotatedKey.KeyVersion.Value;
     }
 
     /// <summary>True when the certificate should be renewed (within the window before expiry).</summary>

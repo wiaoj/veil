@@ -326,3 +326,19 @@
 
 ### 11.4 Dashboard
 - [x] "Intelligence" view — live anomaly feed (`/intelligence` route, "Yapay zeka") reading `GET /v1/intelligence/incidents` (Veil.Api proxy → worker), auto-refreshing every 10s. Per-incident detail + suggested rule shown. *(One-click manual apply still pending — auto-apply already lands rules server-side.)*
+## 12. Inter-service communication over Tyto
+
+Today the control plane ⇄ worker / module ⇄ module calls are a mix of
+in-process Tyto integration events (config sync) and direct HTTP
+(`IntelligenceEndpoints` proxy → worker `/intelligence/incidents`,
+`HttpRuleApplier` → Veil.Api, edge ingest). Consolidate **all** service-to-service
+communication onto Tyto:
+
+- [ ] **Async (`tyto.messaging`)** — fire-and-forget / event-driven flows: config
+  push signals, incident alerts, ingest hand-off, audit fan-out. Already partly
+  here via integration events; extend to the worker boundary.
+- [ ] **Sync (`tyto.rpc`)** — request/response flows that today go over raw HTTP:
+  dashboard → worker incident feed, intelligence rule application → Veil.Api,
+  edge config pull. Replace bespoke HTTP clients with typed Tyto RPC contracts.
+- [ ] Pick transport per call site (in-memory vs broker) without changing call
+  sites; keep contracts in the `*.Contracts` projects.

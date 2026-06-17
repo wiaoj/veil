@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Veil.Certificates.Domain;
 using Veil.Certificates.Domain.Enums;
 using Veil.Certificates.Domain.ValueObjects;
+using Wiaoj.Security.EntityFrameworkCore;
 
 namespace Veil.Certificates.Infrastructure.Persistence.Configurations;
 
@@ -31,7 +32,8 @@ public sealed class CertificateConfiguration : IEntityTypeConfiguration<Certific
 
         builder.Property(x => x.ChainPem);
 
-        builder.Property(x => x.EncryptedPrivateKey);
+        builder.Property(x => x.EncryptedPrivateKey)
+            .HasEncryptedSecretConversion<PrivateKeySecretContext>();
 
         builder.Property(x => x.LastError)
             .HasMaxLength(2048);

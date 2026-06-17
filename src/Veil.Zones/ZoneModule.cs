@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Veil.Zones.Infrastructure.Persistence;
+using Wiaoj.Extensions;
 using Wiaoj.Modulith;
 
 namespace Veil.Zones;
@@ -23,18 +24,22 @@ public sealed class ZoneModule : IWebModule {
         // IIntegrationEventMapper implementations auto-publish to IBus.
         // Singleton lifetime: contexts come from a singleton factory, so the
         // whole dispatch chain must be resolvable from the root provider.
-        services.AddDdd(ddd => ddd
-            .AddEntityFrameworkCore<ZonesDbContext>(efcore => efcore.ConfigureOutbox(outbox => {
-                // Config changes must reach edge nodes promptly; the default
-                // 2-minute warmup delay is far too slow for a control plane.
-                outbox.InitialDelay = TimeSpan.FromSeconds(5);
-                outbox.PollingInterval = TimeSpan.FromSeconds(5);
-            }))
-            .AddTytoIntegration<ZoneModule>(ServiceLifetime.Singleton));
+        services.AddDdd(ddd => {
+            ddd.AddEntityFrameworkCore<ZonesDbContext>(efcore => {
+                efcore.ConfigureOutbox(outbox => {
+                    outbox.InitialDelay = 5.Seconds();
+                    outbox.PollingInterval = 5.Minutes().WithJitter(Jitter.Minimal); //ZombieProcess
+                });
+            });
 
-        services.AddDbContextFactory<ZonesDbContext>((sp, options) => options
-            .UseNpgsql(connectionString)
-            .UseDddInterceptors<ZonesDbContext>(sp));
+            ddd.AddTytoIntegration<ZoneModule>(ServiceLifetime.Singleton);
+        });
+         
+        
+        services.AddDbContextFactory<ZonesDbContext>((sp, options) => {
+                options.UseNpgsql(connectionString);
+                options.UseDddInterceptors<ZonesDbContext>(sp);
+            });
     }
 
     public Task ConfigureAsync(IApplicationBuilder app) {

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Veil.EdgeNodes.Infrastructure.Persistence;
+using Wiaoj.Extensions;
 using Wiaoj.Modulith;
 
 namespace Veil.EdgeNodes;
@@ -16,17 +17,21 @@ public sealed class EdgeNodesModule : IWebModule {
         // edge_nodes schema, not a separate connection string.
         string? connectionString = configuration.GetConnectionString("Default");
 
-        // Same outbox → Tyto chain as ZoneModule (see comment there).
-        services.AddDdd(ddd => ddd
-            .AddEntityFrameworkCore<EdgeNodesDbContext>(efcore => efcore.ConfigureOutbox(outbox => {
-                outbox.InitialDelay = TimeSpan.FromSeconds(5);
-                outbox.PollingInterval = TimeSpan.FromSeconds(5);
-            }))
-            .AddTytoIntegration<EdgeNodesModule>(ServiceLifetime.Singleton));
+        services.AddDdd(ddd => {
+            ddd.AddEntityFrameworkCore<EdgeNodesDbContext>(efcore => {
+                efcore.ConfigureOutbox(outbox => {
+                    outbox.InitialDelay = 5.Seconds();
+                    outbox.PollingInterval = 5.Minutes().WithJitter(Jitter.Minimal);
+                });
+            });
 
-        services.AddDbContextFactory<EdgeNodesDbContext>((sp, options) => options
-            .UseNpgsql(connectionString)
-            .UseDddInterceptors<EdgeNodesDbContext>(sp));
+            ddd.AddTytoIntegration<EdgeNodesModule>(ServiceLifetime.Singleton);
+        });
+
+        services.AddDbContextFactory<EdgeNodesDbContext>((sp, options) => {
+            options.UseNpgsql(connectionString);
+            options.UseDddInterceptors<EdgeNodesDbContext>(sp);
+        });
 
         // Narrow auth surface consumed by internal endpoints and external
         // hosts (analytics ingest) instead of the persistence internals.

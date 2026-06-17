@@ -1,6 +1,8 @@
 using Veil.Auth.Domain.Enums;
 using Veil.Auth.Domain.Events;
 using Veil.Auth.Domain.ValueObjects;
+using Wiaoj.Primitives.Cryptography.Hashing;
+using Wiaoj.Security;
 
 namespace Veil.Auth.Domain;
 
@@ -10,12 +12,14 @@ namespace Veil.Auth.Domain;
 /// only the encoded hash is stored.
 /// </summary>
 public sealed class User : Aggregate<UserId> {
-    public string Email { get; private set; }
+    public EncryptedSecret<EmailSecretContext> EncryptedEmail { get; private set; } 
+    public int EmailKeyVersion { get; private set; }
+    public HexString EmailHash { get; private set; }
+
     public string DisplayName { get; private set; }
     public string PasswordHash { get; private set; }
     public UserRole Role { get; private set; }
     public bool IsDisabled { get; private set; }
-    public DateTimeOffset CreatedAtUtc { get; private set; }
 
     /// <summary>Consecutive failed login attempts since the last success.</summary>
     public int FailedLoginAttempts { get; private set; }
@@ -25,12 +29,13 @@ public sealed class User : Aggregate<UserId> {
 
     private User() { }
 
-    public static Result<User> Create(
-        string email,
-        string displayName,
-        string passwordHash,
-        UserRole role,
-        DateTimeOffset createdAtUtc) {
+    public static Result<User> Create(string email,
+                                      EncryptedSecret<EmailSecretContext> encryptedEmail,
+                                      HexString emailHash,
+                                      string displayName,
+                                      string passwordHash,
+                                      UserRole role) {
+
         string normalizedEmail = email?.Trim().ToLowerInvariant() ?? "";
         if(normalizedEmail.Length is 0 || !normalizedEmail.Contains('@'))
             return AuthErrors.EmailInvalid(email ?? "");
@@ -43,17 +48,18 @@ public sealed class User : Aggregate<UserId> {
 
         User user = new() {
             Id = UserId.New(),
-            Email = normalizedEmail,
+            EncryptedEmail = encryptedEmail,
+            EmailKeyVersion = encryptedEmail.KeyVersion.Value,
+            EmailHash = emailHash,
             DisplayName = displayName.Trim(),
             PasswordHash = passwordHash,
             Role = role,
-            IsDisabled = false,
-            CreatedAtUtc = createdAtUtc
+            IsDisabled = false
         };
 
         user.RaiseDomainEvent(new UserCreatedDomainEvent(user.Id));
 
-        return Result<User>.Success(user);
+        return user;
     }
 
     public Result<Success> ChangePassword(string newPasswordHash) {
@@ -75,8 +81,9 @@ public sealed class User : Aggregate<UserId> {
     }
 
     /// <summary>Whether the account is currently locked out at <paramref name="now"/>.</summary>
-    public bool IsLockedOut(DateTimeOffset now) =>
-        this.LockedUntilUtc is { } until && until > now;
+    public bool IsLockedOut(DateTimeOffset now) {
+        return this.LockedUntilUtc is { } until && until > now;
+    }
 
     /// <summary>
     /// Records a failed login. After <paramref name="maxAttempts"/> consecutive
@@ -95,5 +102,36 @@ public sealed class User : Aggregate<UserId> {
     public void RegisterSuccessfulLogin() {
         this.FailedLoginAttempts = 0;
         this.LockedUntilUtc = null;
+    }
+
+    public static Result<HexString> GenerateEmailHash(string email) {
+        if(string.IsNullOrWhiteSpace(email)) {
+            return AuthErrors.EmailInvalid(email ?? "");
+        }
+
+        string normalized = email.Trim().ToLowerInvariant();
+        return Sha256Hash.Compute(normalized).ToHexStringLower();
+    }
+
+    public Result<Success> ChangeEmail(string newEmail, EncryptedSecret<EmailSecretContext> newEncryptedEmail) {
+        string normalizedEmail = newEmail?.Trim().ToLowerInvariant() ?? "";
+        if(normalizedEmail.Length is 0 || !normalizedEmail.Contains('@'))
+            return AuthErrors.EmailInvalid(newEmail ?? "");
+
+        var hashResult = GenerateEmailHash(normalizedEmail);
+        if(hashResult.IsFailure) {
+            return hashResult.FirstError;
+        }
+
+        this.EncryptedEmail = newEncryptedEmail;
+        this.EmailKeyVersion = newEncryptedEmail.KeyVersion.Value;
+        this.EmailHash = hashResult.Value;
+
+        return Result.Success();
+    }
+
+    public void RotateEmailKey(EncryptedSecret<EmailSecretContext> rotatedEmail) {
+        this.EncryptedEmail = rotatedEmail;
+        this.EmailKeyVersion = rotatedEmail.KeyVersion.Value;
     }
 }

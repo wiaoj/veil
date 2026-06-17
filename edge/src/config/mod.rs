@@ -221,9 +221,9 @@ impl Config {
                     zone.name, zone.upstream
                 ))
             })?;
-            if uri.scheme_str() != Some("http") || uri.authority().is_none() {
+            if !matches!(uri.scheme_str(), Some("http" | "https")) || uri.authority().is_none() {
                 return Err(ConfigError::Invalid(format!(
-                    "zone '{}' upstream must be an absolute http:// URI",
+                    "zone '{}' upstream must be an absolute http:// or https:// URI",
                     zone.name
                 )));
             }

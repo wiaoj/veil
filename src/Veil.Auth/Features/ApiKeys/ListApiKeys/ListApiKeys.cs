@@ -15,11 +15,11 @@ namespace Veil.Auth.Features.ApiKeys.ListApiKeys;
 public sealed record ApiKeySummaryResponse(
     string Id,
     string Name,
-    List<string> Scopes,
+    IEnumerable<string> Scopes,
     bool IsActive,
-    DateTimeOffset CreatedAtUtc,
-    DateTimeOffset? RevokedAtUtc,
-    DateTimeOffset? LastUsedAtUtc);
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? RevokedAt,
+    DateTimeOffset? LastUsedAt);
 
 public sealed record ListApiKeysResponse(List<ApiKeySummaryResponse> Items);
 
@@ -47,9 +47,9 @@ public sealed class ListApiKeysEndpoint : IEndpoint {
                 k.Id,
                 k.Name,
                 k.Scopes,
-                k.RevokedAtUtc,
-                k.CreatedAtUtc,
-                k.LastUsedAtUtc
+                k.RevokedAt,
+                k.CreatedAt,
+                k.LastUsedAt
             })
             .ToListAsync(cancellationToken);
 
@@ -58,10 +58,10 @@ public sealed class ListApiKeysEndpoint : IEndpoint {
                 obfuscator.Encode(k.Id),
                 k.Name,
                 k.Scopes,
-                k.RevokedAtUtc is null,
-                k.CreatedAtUtc,
-                k.RevokedAtUtc,
-                k.LastUsedAtUtc))
+                k.RevokedAt is null,
+                k.CreatedAt,
+                k.RevokedAt,
+                k.LastUsedAt))
             .ToList();
 
         return Results.Ok(new ListApiKeysResponse(items));

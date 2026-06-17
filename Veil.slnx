@@ -15,6 +15,7 @@
     <Project Path="src/Veil.Certificates/Veil.Certificates.csproj" />
     <Project Path="src/Veil.EdgeNodes.Contracts/Veil.EdgeNodes.Contracts.csproj" />
     <Project Path="src/Veil.EdgeNodes/Veil.EdgeNodes.csproj" />
+    <Project Path="src/Veil.Infrastructure.Security/Veil.Infrastructure.Security.csproj" Id="3c1c4084-4e1e-4ca6-89eb-f579f9da2a4c" />
     <Project Path="src/Veil.Shared/Veil.Shared.csproj" />
     <Project Path="src/Veil.Zones.Contracts/Veil.Zones.Contracts.csproj" />
     <Project Path="src/Veil.Zones/Veil.Zones.csproj" />
@@ -23,5 +24,6 @@
     <Project Path="src/Apps/Veil.Analytics.Worker/Veil.Analytics.Worker.csproj" />
     <Project Path="src/Apps/Veil.Api/Veil.Api.csproj" />
     <Project Path="src/Apps/Veil.ConfigSync/Veil.ConfigSync.csproj" />
+    <Project Path="src/Apps/Veil.DbMigrator/Veil.DbMigrator.csproj" />
   </Folder>
 </Solution>

@@ -65,9 +65,11 @@ public static class EdgeConfigSnapshotBuilder {
             if(zone.Status is ZoneStatus.Error)
                 continue;
 
-            // The edge data plane speaks plain http to upstreams for now;
-            // zones without an http target cannot be served.
-            UpstreamTarget? target = zone.Upstream.Targets.FirstOrDefault(t => t.Url.Scheme == "http");
+            // The edge data plane speaks both http and https to upstreams
+            // (TLS chosen from the URI scheme). A zone with no target at all
+            // cannot be served.
+            UpstreamTarget? target = zone.Upstream.Targets.FirstOrDefault(
+                t => t.Url.Scheme is "http" or "https");
             if(target is null)
                 continue;
 

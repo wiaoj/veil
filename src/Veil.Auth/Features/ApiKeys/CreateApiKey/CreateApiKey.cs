@@ -3,13 +3,13 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
-using System.Security.Cryptography;
 using Veil.Auth.Audit;
 using Veil.Auth.Domain;
 using Veil.Auth.Domain.ValueObjects;
 using Veil.Auth.Infrastructure.Persistence;
 using Veil.Shared;
 using Wiaoj.Endpoints;
+using Wiaoj.Primitives.Collections;
 using Wiaoj.Primitives.Cryptography.Hashing;
 
 namespace Veil.Auth.Features.ApiKeys.CreateApiKey;
@@ -23,7 +23,7 @@ public sealed record CreateApiKeyRequest(string Name, List<string>? Scopes = nul
 public sealed record CreateApiKeyResponse(
     string Id,
     string Name,
-    List<string> Scopes,
+    IEnumerable<string> Scopes,
     string Key,
     DateTimeOffset CreatedAtUtc);
 
@@ -45,7 +45,6 @@ public sealed class CreateApiKeyEndpoint : IEndpoint {
         IDbContextFactory<AuthDbContext> dbFactory,
         IObfuscator<UserId> userObfuscator,
         IObfuscator<ApiKeyId> keyObfuscator,
-        TimeProvider timeProvider,
         IAuditLogger audit,
         HttpContext httpContext,
         CancellationToken cancellationToken) {
@@ -54,21 +53,27 @@ public sealed class CreateApiKeyEndpoint : IEndpoint {
         // An API key principal has no subject and cannot create more keys.
         string? subject = caller.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? caller.FindFirstValue("sub");
+
         if(subject is null || !userObfuscator.TryDecode(subject, out UserId createdBy))
             return Results.StatusCode(StatusCodes.Status403Forbidden);
 
-        string key = $"vak_{Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32))}";
-        string keyHash = Sha256Hash.Compute(key).ToHexString().ToLower();
+        using Secret<byte> rawBytes = Secret<byte>.Generate(32);
+
+        string plaintextKey = rawBytes.Expose(bytes => $"vak_{HexString.FromBytesLower(bytes)}");
+
+        HexString keyHash = Sha256Hash.Compute(plaintextKey).ToHexStringLower();
 
         Result<ApiKey> apiKey = ApiKey.Create(
-            req.Name, keyHash, req.Scopes ?? [], createdBy, timeProvider.GetUtcNow());
-        if(apiKey.IsFailure) return apiKey.ToProblemDetails();
+            req.Name, keyHash, req.Scopes ?? [], createdBy);
+
+        if(apiKey.IsFailure)
+            return apiKey.ToProblemDetails();
 
         await using AuthDbContext db = await dbFactory.CreateDbContextAsync(cancellationToken);
         await db.ApiKeys.AddAsync(apiKey.Value, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
-        string encodedId = keyObfuscator.Encode(apiKey.Value.Id);
+        string encodedId = keyObfuscator.EncodeId(apiKey.Value);
 
         await audit.WriteAsync(
             AuditActions.ApiKeyCreated,
@@ -83,7 +88,7 @@ public sealed class CreateApiKeyEndpoint : IEndpoint {
             encodedId,
             apiKey.Value.Name,
             apiKey.Value.Scopes,
-            key,
-            apiKey.Value.CreatedAtUtc));
+            plaintextKey,
+            apiKey.Value.CreatedAt));
     }
 }

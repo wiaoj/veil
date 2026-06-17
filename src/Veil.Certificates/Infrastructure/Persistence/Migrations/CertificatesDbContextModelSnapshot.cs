@@ -40,6 +40,9 @@ namespace Veil.Certificates.Infrastructure.Persistence.Migrations
                     b.Property<string>("EncryptedPrivateKey")
                         .HasColumnType("text");
 
+                    b.Property<int>("EncryptedPrivateKeyVersion")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset?>("ExpiresAtUtc")
                         .HasColumnType("timestamp with time zone");
 

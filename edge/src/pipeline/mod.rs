@@ -39,6 +39,16 @@ impl RequestContext {
             .and_then(|v| v.to_str().ok())
             .is_some_and(|v| v.contains("text/html"))
     }
+
+    /// Resolves the visitor-facing language for edge-served pages from the
+    /// `?locale=`/`?l=` override or the `Accept-Language` header.
+    pub fn lang(&self) -> crate::i18n::Lang {
+        let accept_language = self
+            .headers
+            .get(hyper::header::ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok());
+        crate::i18n::resolve(self.query.as_deref(), accept_language)
+    }
 }
 
 /// Outcome of rule evaluation for a single request.

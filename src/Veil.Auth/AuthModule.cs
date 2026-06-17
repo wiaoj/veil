@@ -6,10 +6,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
-using System.Text;
+using Veil.Auth.Domain;
 using Veil.Auth.Infrastructure;
 using Veil.Auth.Infrastructure.Persistence;
 using Veil.Auth.Infrastructure.Security;
+using Wiaoj.Extensions;
 using Wiaoj.Modulith;
 
 namespace Veil.Auth;
@@ -22,16 +23,21 @@ public sealed class AuthModule : IWebModule {
 
         services.Configure<AuthOptions>(configuration.GetSection(AuthOptions.SectionName));
 
-        // Same outbox → dispatch chain as the other modules.
-        services.AddDdd(ddd => ddd
-            .AddEntityFrameworkCore<AuthDbContext>(efcore => efcore.ConfigureOutbox(outbox => {
-                outbox.InitialDelay = TimeSpan.FromSeconds(5);
-                outbox.PollingInterval = TimeSpan.FromSeconds(5);
-            })));
+        services.AddDdd(ddd => {
+            ddd.AddEntityFrameworkCore<AuthDbContext>(efcore => {
+                efcore.ConfigureOutbox(outbox => {
+                    outbox.InitialDelay = 5.Seconds();
+                    outbox.PollingInterval = 5.Minutes().WithJitter(Jitter.Minimal);
+                });
+            });
+        });
 
-        services.AddDbContextFactory<AuthDbContext>((sp, options) => options
-            .UseNpgsql(connectionString)
-            .UseDddInterceptors<AuthDbContext>(sp));
+        services.AddDbContextFactory<AuthDbContext>((sp, options) => {
+            options.UseNpgsql(connectionString);
+            options.UseDddInterceptors<AuthDbContext>(sp);
+        });
+
+        services.AddWiaojSecurity().AddManagedProtector<EmailSecretContext>();
 
         services.AddSingleton<JwtTokenService>();
         services.AddSingleton<Audit.IAuditLogger, Audit.AuditLogger>();
@@ -70,13 +76,15 @@ public sealed class AuthModule : IWebModule {
         // Everything is protected by default; public endpoints (login,
         // refresh) and internally-authenticated ones (edge config pull)
         // opt out explicitly with AllowAnonymous.
-        services.AddAuthorization(options => {
-            options.FallbackPolicy = new AuthorizationPolicyBuilder(
+        services.AddAuthorizationBuilder()
+            // Everything is protected by default; public endpoints (login,
+            // refresh) and internally-authenticated ones (edge config pull)
+            // opt out explicitly with AllowAnonymous.
+            .SetFallbackPolicy(new AuthorizationPolicyBuilder(
                     JwtBearerDefaults.AuthenticationScheme,
                     ApiKeyAuthenticationHandler.SchemeName)
                 .RequireAuthenticatedUser()
-                .Build();
-        });
+                .Build());
     }
 
     public Task ConfigureAsync(IApplicationBuilder app) {

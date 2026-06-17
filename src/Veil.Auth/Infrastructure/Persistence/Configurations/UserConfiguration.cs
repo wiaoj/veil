@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Veil.Auth.Domain;
 using Veil.Auth.Domain.ValueObjects;
+using Wiaoj.Security.EntityFrameworkCore;
 
 namespace Veil.Auth.Infrastructure.Persistence.Configurations;
 
@@ -11,17 +12,22 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User> {
 
         builder.HasKey(x => x.Id);
 
-        // Optimistic concurrency via the aggregate's RowVersion is deferred
-        // until Wiaoj.Ddd.EntityFrameworkCore (ApplyDddConventions) is adopted.
-        builder.Ignore(x => x.Version);
-
         builder.Property(x => x.Id)
             .HasConversion(
                 id => id.Value.Value,
                 value => UserId.From(value));
-
-        builder.Property(x => x.Email)
-            .HasMaxLength(320)
+         
+        builder.Property(x => x.EncryptedEmail)
+            .HasEncryptedSecretConversion<EmailSecretContext>()
+            .HasMaxLength(1024)
+            .IsRequired();
+         
+        builder.Property(x => x.EmailHash)
+            .HasConversion(
+                hash => hash.ToString(),
+                value => HexString.Parse(value))
+            .HasMaxLength(64)
+            .IsFixedLength()
             .IsRequired();
 
         builder.Property(x => x.DisplayName)
@@ -36,6 +42,8 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User> {
             .HasConversion<string>()
             .HasMaxLength(20);
 
-        builder.HasIndex(x => x.Email).IsUnique();
+        // 3. Benzersiz indeks artık e-posta adresinin şifreli haline değil, HASH değerine uygulanıyor.
+        builder.HasIndex(x => x.EmailHash)
+            .IsUnique();
     }
 }

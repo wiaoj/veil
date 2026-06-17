@@ -1,8 +1,8 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 using Veil.Auth.Audit;
@@ -51,13 +51,21 @@ public sealed class LoginEndpoint : IEndpoint {
         if(string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrEmpty(req.Password))
             return Results.Unauthorized();
 
+        using Secret<char> password = Secret<char>.Parse(req.Password);
         string email = req.Email.Trim().ToLowerInvariant();
         string? ip = httpContext.Connection.RemoteIpAddress?.ToString();
         DateTimeOffset now = timeProvider.GetUtcNow();
         AuthOptions opts = authOptions.Value;
 
         await using AuthDbContext db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        User? user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+      
+        Result<HexString> hashResult = User.GenerateEmailHash(email);
+        if(hashResult.IsFailure) {
+            return Results.Unauthorized();
+        }
+        HexString emailHash = hashResult.Value;
+         
+        User? user = await db.Users.FirstOrDefaultAsync(u => u.EmailHash == emailHash, cancellationToken);
 
         // Locked-out accounts are rejected before the password is even checked.
         // The response shape is identical to a normal failure (no signal that
@@ -69,7 +77,7 @@ public sealed class LoginEndpoint : IEndpoint {
 
         // Same response for unknown user and wrong password — no user
         // enumeration through error shape.
-        if(user is null || user.IsDisabled || !Pbkdf2PasswordHasher.Verify(req.Password, user.PasswordHash)) {
+        if(user is null || user.IsDisabled || !Pbkdf2PasswordHasher.Verify(password, user.PasswordHash)) {
             // Count failures (and arm lockout) only for real, enabled accounts.
             if(user is not null && !user.IsDisabled) {
                 user.RegisterFailedLogin(now, opts.MaxFailedLoginAttempts, TimeSpan.FromMinutes(opts.LockoutMinutes));
@@ -98,7 +106,7 @@ public sealed class LoginEndpoint : IEndpoint {
         TimeProvider timeProvider,
         CancellationToken cancellationToken) {
         string refreshToken = $"vrt_{Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32))}";
-        string refreshTokenHash = Sha256Hash.Compute(refreshToken).ToHexString().ToLower();
+        var refreshTokenHash = Sha256Hash.Compute(refreshToken).ToHexStringLower();
 
         await db.RefreshTokens.AddAsync(
             RefreshToken.Issue(user.Id, refreshTokenHash, timeProvider.GetUtcNow(), tokenService.RefreshTokenLifetime),

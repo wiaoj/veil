@@ -8,6 +8,7 @@ use http_body_util::{BodyExt, Full};
 use hyper::body::{Body, Bytes, Incoming};
 use hyper::header::{HeaderValue, CONNECTION, HOST};
 use hyper::{Request, Response, Uri, Version};
+use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 
@@ -15,11 +16,14 @@ use crate::response::ProxyBody;
 
 use super::RequestContext;
 
+/// Upstream connector: plain http or TLS, chosen per-request from the URI scheme.
+pub type UpstreamConnector = HttpsConnector<HttpConnector>;
+
 /// Client for streamed (un-inspected) request bodies.
-pub type UpstreamClient = Client<HttpConnector, Incoming>;
+pub type UpstreamClient = Client<UpstreamConnector, Incoming>;
 /// Client for buffered bodies — used after body inspection, where the body
 /// has already been read into memory.
-pub type BufferedClient = Client<HttpConnector, Full<Bytes>>;
+pub type BufferedClient = Client<UpstreamConnector, Full<Bytes>>;
 
 /// Forwards a request to the zone upstream. Generic over the body type so both
 /// the streamed (`Incoming`) and buffered (`Full<Bytes>`, post-inspection)
@@ -28,7 +32,7 @@ pub async fn forward<B>(
     req: Request<B>,
     ctx: &RequestContext,
     upstream: &str,
-    client: &Client<HttpConnector, B>,
+    client: &Client<UpstreamConnector, B>,
 ) -> Result<Response<ProxyBody>, Box<dyn std::error::Error + Send + Sync>>
 where
     B: Body + Send + Unpin + 'static,

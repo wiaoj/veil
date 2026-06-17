@@ -44,7 +44,7 @@ public sealed class ApiKeyAuthenticationHandler(
             return AuthenticateResult.Fail("Invalid or revoked API key.");
 
         DateTimeOffset now = timeProvider.GetUtcNow();
-        if(apiKey.LastUsedAtUtc is null || now - apiKey.LastUsedAtUtc >= MarkUsedInterval) {
+        if(apiKey.LastUsedAt is null || now - apiKey.LastUsedAt >= MarkUsedInterval) {
             apiKey.MarkUsed(now);
             await db.SaveChangesAsync(this.Context.RequestAborted);
         }

@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
 using Veil.EdgeNodes.Contracts;
 using Veil.EdgeNodes.Domain;
 using Veil.EdgeNodes.Domain.Enums;
 using Veil.EdgeNodes.Domain.ValueObjects;
 using Veil.EdgeNodes.Infrastructure.Persistence;
 using Veil.Shared;
+using Wiaoj.Primitives.Buffers;
 using Wiaoj.Primitives.Cryptography.Hashing;
 
 namespace Veil.EdgeNodes;
@@ -23,29 +25,31 @@ public sealed class EdgeNodeTokenVerifier(
     private static readonly TimeSpan MarkSeenInterval = TimeSpan.FromMinutes(1);
 
     public async ValueTask<EdgeNodeTokenVerdict> VerifyAsync(string nodeId, string token, CancellationToken cancellationToken) {
-        if(string.IsNullOrEmpty(nodeId) || string.IsNullOrEmpty(token))
-            return EdgeNodeTokenVerdict.Invalid;
-
-        if(!obfuscator.TryDecode(nodeId, out EdgeNodeId edgeNodeId))
+        if(!obfuscator.TryDecode(nodeId, out EdgeNodeId edgeNodeId) || string.IsNullOrEmpty(token))
             return EdgeNodeTokenVerdict.Invalid;
 
         await using EdgeNodesDbContext db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         EdgeNode? node = await db.EdgeNodes
-            .FirstOrDefaultAsync(n => n.Id.Equals(edgeNodeId), cancellationToken);
+            .FirstOrDefaultAsync(n => n.Id == edgeNodeId, cancellationToken);
 
-        string tokenHash = Sha256Hash.Compute(token).ToHexString().ToLower();
-        if(node is null || node.TokenHash != tokenHash)
+        HexString actualTokenHash = Sha256Hash.Compute(token).ToHexStringLower();
+
+        if(node is null) {
+            using ValueBuffer<byte> fakeHash = ValueBuffer.Create32(stackalloc byte[32]);
+            CryptographicOperations.FixedTimeEquals(fakeHash, actualTokenHash.ToBytes());
+            return EdgeNodeTokenVerdict.Invalid;
+        }
+
+        if(!node.TokenHash.FixedTimeEquals(actualTokenHash))
             return EdgeNodeTokenVerdict.Invalid;
 
         if(node.Status is EdgeNodeStatus.Disabled)
             return EdgeNodeTokenVerdict.Disabled;
 
         DateTimeOffset now = timeProvider.GetUtcNow();
-        if(node.LastSeenAtUtc is null || now - node.LastSeenAtUtc >= MarkSeenInterval) {
-            node.MarkSeen(now);
-            await db.SaveChangesAsync(cancellationToken);
-        }
+        node.MarkSeen(now);
+        await db.SaveChangesAsync(cancellationToken);
 
         return EdgeNodeTokenVerdict.Valid;
     }

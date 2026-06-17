@@ -40,11 +40,6 @@ spec:
                 secretKeyRef:
                   name: veil-secrets
                   key: Auth__SigningKey
-            - name: Certificates__EncryptionKey
-              valueFrom:
-                secretKeyRef:
-                  name: veil-secrets
-                  key: Certificates__EncryptionKey
           livenessProbe:
             httpGet:
               path: /healthz

@@ -83,7 +83,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 /** Authenticated mutation with the same refresh-and-retry semantics. */
 export async function apiSend<T = unknown>(
   path: string,
-  method: 'POST' | 'PUT' | 'DELETE',
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   body?: unknown,
 ): Promise<T | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -331,6 +331,28 @@ export interface ConfigPushLogResponse {
   page: number
   pageSize: number
   totalCount: number
+}
+
+export interface ApiKeySummary {
+  id: string
+  name: string
+  scopes: Array<string>
+  isActive: boolean
+  createdAt: string
+  revokedAt: string | null
+  lastUsedAt: string | null
+}
+
+export interface ListApiKeysResponse {
+  items: Array<ApiKeySummary>
+}
+
+export interface CreateApiKeyResponse {
+  id: string
+  name: string
+  scopes: Array<string>
+  key: string
+  createdAtUtc: string
 }
 
 // ── AI traffic analysis (Phase 11) ───────────────────────────────────

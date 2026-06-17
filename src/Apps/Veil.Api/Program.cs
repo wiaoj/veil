@@ -3,9 +3,14 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Text.Json.Serialization;
 using Tyto;
 using Tyto.DependencyInjection;
+using Veil.Analytics;
 using Veil.Api.ConfigSync;
+using Veil.Auth;
+using Veil.Certificates;
+using Veil.Certificates.IntegrationEvents;
 using Veil.EdgeNodes;
 using Veil.EdgeNodes.Contracts.IntegrationEvents;
+using Veil.Infrastructure.Security;
 using Veil.Shared;
 using Veil.Shared.Observability;
 using Veil.Zones;
@@ -28,40 +33,29 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddModulith(builder.Configuration, builder.Environment, modules => {
     modules.AddModule<SharedModule>();
-    modules.AddModule<Veil.Auth.AuthModule>();
+    modules.AddModule<SecurityModule>();
+    modules.AddModule<AuthModule>();
     modules.AddModule<ZoneModule>();
-    modules.AddModule<Veil.Certificates.CertificatesModule>();
+    modules.AddModule<CertificatesModule>();
     modules.AddModule<EdgeNodesModule>();
     // Read side only — ingestion (AnalyticsModule) runs in the worker.
-    modules.AddModule<Veil.Analytics.AnalyticsQueryModule>();
-});
-builder.Services.AddModulithAspNetCore();
+    modules.AddModule<AnalyticsQueryModule>();
+})
+    .AddModulithAspNetCore();
 
 // OpenTelemetry tracing + metrics (opt-in via OTEL_EXPORTER_OTLP_ENDPOINT).
 builder.Services.AddVeilTelemetry(builder.Configuration, "veil-api");
 
 // Current-user accessor over the request principal (JWT/API-key claims).
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<Veil.Shared.ICurrentUser, Veil.Shared.HttpContextCurrentUser>();
-
-// The Wiaoj.Ddd EF integration registers its dispatcher/interceptors scoped
-// (designed for AddDbContext); our contexts come from singleton factories,
-// so the whole chain must resolve from the root provider. Without this the
-// app fails at startup in Development ("Cannot resolve scoped service ...
-// from root provider"). Goes away once the library registers them
-// factory-compatibly.
-LiftDddRegistrationsToSingleton(builder.Services);
-
-// Tyto event bus — in-memory transport; integration events published by the
-// outbox processor are handled in-process by the ConfigSync handlers.
-builder.Services.TryAddSingleton<ISerializer<TytoJsonSerializerKey>>(
-    new SystemTextJsonSerializer<TytoJsonSerializerKey>(new System.Text.Json.JsonSerializerOptions()));
+builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 
 builder.AddTyto(tyto => {
     tyto.MessageDefinitions(define => {
         define.Add<ZoneConfigChanged>("zones.config-changed", 1);
         define.Add<EdgeNodeRegistered>("edge-nodes.registered", 1);
-        define.Add<Veil.Certificates.IntegrationEvents.CertificateIssued>("certificates.issued", 1);
+        define.Add<CertificateIssued>("certificates.issued", 1);
+        define.Add<CertificateRevoked>("certificates.revoked", 1);
     });
     // Publishes go to the 'veil.events' exchange; the in-memory broker
     // fans out to bound queues (RabbitMQ topology semantics).
@@ -72,10 +66,12 @@ builder.AddTyto(tyto => {
             endpoint.ListenOn("memory", "veil.config-sync");
             endpoint.Routing.Publish<ZoneConfigChanged>().To("memory", "veil.events");
             endpoint.Routing.Publish<EdgeNodeRegistered>().To("memory", "veil.events");
-            endpoint.Routing.Publish<Veil.Certificates.IntegrationEvents.CertificateIssued>().To("memory", "veil.events");
+            endpoint.Routing.Publish<CertificateIssued>().To("memory", "veil.events");
+            endpoint.Routing.Publish<CertificateRevoked>().To("memory", "veil.events");
             endpoint.AddHandler<ZoneConfigChangedHandler>();
             endpoint.AddHandler<EdgeNodeRegisteredHandler>();
             endpoint.AddHandler<CertificateIssuedHandler>();
+            endpoint.AddHandler<CertificateRevokedHandler>();
         });
     });
 });
@@ -138,7 +134,7 @@ app.MapHealthChecks("/readyz", new() {
 }).AllowAnonymous();
 
 // Prometheus scrape endpoint.
-app.MapGet("/metrics", (Veil.Shared.Observability.MetricsCollector metrics) =>
+app.MapGet("/metrics", (MetricsCollector metrics) =>
         Results.Text(metrics.Render(), "text/plain; version=0.0.4"))
    .AllowAnonymous();
 
@@ -148,29 +144,12 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi().AllowAnonymous();
 }
 
-app.UseHttpsRedirection();
+// In Development the edge nodes pull config over plain HTTP (:5150) and the
+// Vite dev proxy forwards /v1/* there too; forcing HTTPS would 307 them to the
+// self-signed :7248 endpoint, which neither client follows.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.Run();
-
-// Rewrites the scoped Wiaoj.Ddd descriptors (dispatcher, audit/dispatch
-// interceptors and their ISaveChangesInterceptor forwards) to singleton so
-// they can be resolved by the singleton DbContext factories.
-static void LiftDddRegistrationsToSingleton(IServiceCollection services) {
-    for(int i = 0; i < services.Count; i++) {
-        ServiceDescriptor descriptor = services[i];
-        if(descriptor.Lifetime != ServiceLifetime.Scoped)
-            continue;
-
-        bool isDdd = (descriptor.ServiceType.FullName?.StartsWith("Wiaoj.Ddd") ?? false)
-            || (descriptor.ImplementationType?.FullName?.StartsWith("Wiaoj.Ddd") ?? false)
-            || descriptor.ServiceType == typeof(ISaveChangesInterceptor);
-        if(!isDdd)
-            continue;
-
-        services[i] = descriptor.ImplementationType is not null
-            ? ServiceDescriptor.Singleton(descriptor.ServiceType, descriptor.ImplementationType)
-            : descriptor.ImplementationFactory is not null
-                ? ServiceDescriptor.Singleton(descriptor.ServiceType, descriptor.ImplementationFactory)
-                : descriptor;
-    }
-}

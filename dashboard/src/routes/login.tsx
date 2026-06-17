@@ -1,6 +1,9 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { login } from '#/lib/api'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 
 export const Route = createFileRoute('/login')({
   component: LoginPage,
@@ -28,43 +31,47 @@ function LoginPage() {
 
   return (
     <main className="flex min-h-[70vh] items-center justify-center px-4">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm space-y-4 rounded-xl border border-gray-200 p-8 shadow-sm dark:border-gray-800"
-      >
-        <div>
-          <h1 className="text-xl font-semibold">Veil</h1>
-          <p className="text-sm text-gray-500">Kontrol düzlemine giriş yapın</p>
-        </div>
-        <label className="block text-sm">
-          E-posta
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </label>
-        <label className="block text-sm">
-          Parola
-          <input
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </label>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={busy}
-          className="w-full rounded-md bg-gray-900 px-3 py-2 text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900"
-        >
-          {busy ? 'Giriş yapılıyor…' : 'Giriş yap'}
-        </button>
-      </form>
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <div className="mb-1 flex items-center gap-2">
+            <span className="bg-primary h-2 w-2 rounded-full" />
+            <CardTitle className="text-lg">Veil</CardTitle>
+          </div>
+          <p className="text-muted-foreground text-sm">Kontrol düzlemine giriş yapın</p>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label htmlFor="email" className="text-sm font-medium">
+                E-posta
+              </label>
+              <Input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="password" className="text-sm font-medium">
+                Parola
+              </label>
+              <Input
+                id="password"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            {error && <p className="text-destructive text-sm">{error}</p>}
+            <Button type="submit" disabled={busy} className="w-full">
+              {busy ? 'Giriş yapılıyor…' : 'Giriş yap'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </main>
   )
 }

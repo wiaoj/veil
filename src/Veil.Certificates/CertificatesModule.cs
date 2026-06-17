@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Veil.Certificates.Infrastructure.Persistence;
+using Wiaoj.Extensions;
 using Wiaoj.Modulith;
 
 namespace Veil.Certificates;
@@ -16,19 +17,27 @@ public sealed class CertificatesModule : IWebModule {
         // certificates schema, not a separate connection string.
         string? connectionString = configuration.GetConnectionString("Default");
 
-        // Same outbox → Tyto chain as ZoneModule (see comment there).
-        services.AddDdd(ddd => ddd
-            .AddEntityFrameworkCore<CertificatesDbContext>(efcore => efcore.ConfigureOutbox(outbox => {
-                outbox.InitialDelay = TimeSpan.FromSeconds(5);
-                outbox.PollingInterval = TimeSpan.FromSeconds(5);
-            }))
-            .AddTytoIntegration<CertificatesModule>(ServiceLifetime.Singleton));
+        services.AddDdd(ddd => {
+            ddd.AddEntityFrameworkCore<CertificatesDbContext>(efcore => {
+                efcore.ConfigureOutbox(outbox => {
+                    outbox.InitialDelay = 5.Seconds();
+                    outbox.PollingInterval = 5.Minutes().WithJitter(Jitter.Minimal);
+                });
+            });
 
-        services.AddDbContextFactory<CertificatesDbContext>((sp, options) => options
-            .UseNpgsql(connectionString)
-            .UseDddInterceptors<CertificatesDbContext>(sp));
+            ddd.AddTytoIntegration<CertificatesModule>(ServiceLifetime.Singleton);
+        });
+         
+        services.AddDbContextFactory<CertificatesDbContext>((sp, options) => {
+            options.UseNpgsql(connectionString);
+            options.UseDddInterceptors<CertificatesDbContext>(sp);
+        });
 
         services.Configure<CertificatesOptions>(configuration.GetSection(CertificatesOptions.SectionName));
+
+        services.AddWiaojSecurity()
+            .AddManagedProtector<Domain.PrivateKeySecretContext>()
+            .AddDataRotator<Domain.PrivateKeySecretContext, Infrastructure.Security.PrivateKeyDataRotator>();
     }
 
     public Task ConfigureAsync(IApplicationBuilder app) {

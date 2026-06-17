@@ -27,3 +27,14 @@ public sealed class ZoneCreatedMapper(IObfuscator<ZoneId> obfuscator)
         return new ZoneConfigChanged(obfuscator.Encode(@event.ZoneId), @event.OccurredAt);
     }
 }
+
+/// <summary>
+/// Deleting a zone removes it from the fleet snapshot, which is a config
+/// change for every node — same integration event, the push loop re-pushes.
+/// </summary>
+public sealed class ZoneDeletedMapper(IObfuscator<ZoneId> obfuscator)
+    : IIntegrationEventMapper<ZoneDeletedDomainEvent, ZoneConfigChanged> {
+    public ZoneConfigChanged Map(ZoneDeletedDomainEvent @event) {
+        return new ZoneConfigChanged(obfuscator.Encode(@event.ZoneId), @event.OccurredAt);
+    }
+}

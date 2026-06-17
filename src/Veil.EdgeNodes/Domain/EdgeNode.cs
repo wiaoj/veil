@@ -1,6 +1,7 @@
 using Veil.EdgeNodes.Domain.Enums;
 using Veil.EdgeNodes.Domain.Events;
 using Veil.EdgeNodes.Domain.ValueObjects;
+using Wiaoj.Primitives.Collections;
 
 namespace Veil.EdgeNodes.Domain;
 
@@ -13,7 +14,7 @@ namespace Veil.EdgeNodes.Domain;
 public sealed class EdgeNode : Aggregate<EdgeNodeId> {
     public string Name { get; private set; }
     public Uri Address { get; private set; }
-    public string TokenHash { get; private set; }
+    public HexString TokenHash { get; private set; }
     public EdgeNodeStatus Status { get; private set; }
     public DateTimeOffset RegisteredAtUtc { get; private set; }
     public DateTimeOffset? LastSeenAtUtc { get; private set; }
@@ -23,7 +24,7 @@ public sealed class EdgeNode : Aggregate<EdgeNodeId> {
     public static Result<EdgeNode> Register(
         string name,
         Uri address,
-        string tokenHash,
+        HexString tokenHash,
         DateTimeOffset registeredAtUtc) {
         if(string.IsNullOrWhiteSpace(name))
             return EdgeNodeErrors.NameEmpty;
@@ -31,7 +32,7 @@ public sealed class EdgeNode : Aggregate<EdgeNodeId> {
         if(!address.IsAbsoluteUri || address.Scheme is not ("http" or "https"))
             return EdgeNodeErrors.AddressInvalid(address.ToString());
 
-        if(string.IsNullOrWhiteSpace(tokenHash))
+        if(tokenHash == default)
             return EdgeNodeErrors.TokenHashEmpty;
 
         EdgeNode node = new() {
@@ -49,10 +50,16 @@ public sealed class EdgeNode : Aggregate<EdgeNodeId> {
     }
 
     /// <summary>Records a successful contact from the node (config pull, heartbeat).</summary>
-    public Result<Success> MarkSeen(DateTimeOffset seenAtUtc) {
+    public Result<Success> MarkSeen(DateTimeOffset seenAtUtc) { 
+        TimeSpan throttleInterval = TimeSpan.FromMinutes(1);
+        if(this.LastSeenAtUtc is not null && (seenAtUtc - this.LastSeenAtUtc.Value) < throttleInterval) {
+            return Result.Success();
+        }
+        // 1 dakika geçmişse güncelle
         this.LastSeenAtUtc = seenAtUtc;
         if(this.Status is EdgeNodeStatus.Registered)
             this.Status = EdgeNodeStatus.Active;
+
         return Result.Success();
     }
 

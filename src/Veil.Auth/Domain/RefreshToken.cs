@@ -9,8 +9,8 @@ namespace Veil.Auth.Domain;
 /// replayed (stolen) token is detectable as already-rotated.
 /// </summary>
 public sealed class RefreshToken : Entity<RefreshTokenId> {
-    public UserId UserId { get; private set; }
-    public string TokenHash { get; private set; }
+    public UserId UserId { get; private set; } 
+    public HexString TokenHash { get; private set; }
     public DateTimeOffset ExpiresAtUtc { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset? RevokedAtUtc { get; private set; }
@@ -20,7 +20,7 @@ public sealed class RefreshToken : Entity<RefreshTokenId> {
 
     public static RefreshToken Issue(
         UserId userId,
-        string tokenHash,
+        HexString tokenHash,
         DateTimeOffset createdAtUtc,
         TimeSpan lifetime) {
         return new RefreshToken {

@@ -59,7 +59,6 @@ services:
       ConfigSync__PushHmacKey: ${VEIL_PUSH_HMAC_KEY:?set a 64-hex push key}
       Auth__SigningKey: ${VEIL_AUTH_SIGNING_KEY:?set a signing key}
       Auth__AdminPassword: ${VEIL_ADMIN_PASSWORD:?set an admin password}
-      Certificates__EncryptionKey: ${VEIL_CERT_ENCRYPTION_KEY:-}
       Certificates__AcmeDirectoryUrl: ${VEIL_ACME_DIRECTORY_URL:-}
     ports:
       - "5210:8080"

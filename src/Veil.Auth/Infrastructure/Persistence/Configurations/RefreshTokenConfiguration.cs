@@ -22,8 +22,12 @@ public sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refresh
                 value => UserId.From(value));
 
         builder.Property(x => x.TokenHash)
-            .HasMaxLength(64)
-            .IsRequired();
+             .HasConversion(
+                 hash => hash.ToString(),
+                 value => HexString.Parse(value))
+             .HasMaxLength(64)
+             .IsFixedLength()
+             .IsRequired();
 
         builder.Property(x => x.ReplacedByTokenHash)
             .HasMaxLength(64);

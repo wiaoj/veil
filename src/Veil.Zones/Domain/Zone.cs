@@ -141,4 +141,15 @@ public sealed class Zone : Aggregate<ZoneId> {
         RaiseDomainEvent(new ZoneConfigChangedDomainEvent(this.Id));
         return Result.Success();
     }
+
+    /// <summary>
+    /// Signals that the zone is being removed. Raised before the aggregate is
+    /// deleted so the edge fleet drops it on the next config push. A removed
+    /// zone is a config change for every node, so it maps onto the shared
+    /// ZoneConfigChanged integration event.
+    /// </summary>
+    public Result<Success> MarkDeleted() {
+        RaiseDomainEvent(new ZoneDeletedDomainEvent(this.Id));
+        return Result.Success();
+    }
 }

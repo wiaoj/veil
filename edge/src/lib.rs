@@ -3,6 +3,7 @@ pub mod analytics;
 pub mod challenge;
 pub mod config;
 pub mod geoip;
+pub mod i18n;
 pub mod metrics;
 pub mod pipeline;
 pub mod proxy;

@@ -15,11 +15,11 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as IntelligenceRouteImport } from './routes/intelligence'
 import { Route as CertificatesRouteImport } from './routes/certificates'
-import { Route as AboutRouteImport } from './routes/about'
+import { Route as ApiKeysRouteImport } from './routes/api-keys'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ZonesNewRouteImport } from './routes/zones.new'
-import { Route as ZonesZoneIdRouteImport } from './routes/zones.$zoneId'
-import { Route as NodesNodeIdRouteImport } from './routes/nodes.$nodeId'
+import { Route as ZonesNewRouteImport } from './routes/zones_.new'
+import { Route as ZonesZoneIdRouteImport } from './routes/zones_.$zoneId'
+import { Route as NodesNodeIdRouteImport } from './routes/nodes_.$nodeId'
 
 const ZonesRoute = ZonesRouteImport.update({
   id: '/zones',
@@ -51,9 +51,9 @@ const CertificatesRoute = CertificatesRouteImport.update({
   path: '/certificates',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AboutRoute = AboutRouteImport.update({
-  id: '/about',
-  path: '/about',
+const ApiKeysRoute = ApiKeysRouteImport.update({
+  id: '/api-keys',
+  path: '/api-keys',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -62,43 +62,43 @@ const IndexRoute = IndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const ZonesNewRoute = ZonesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ZonesRoute,
+  id: '/zones_/new',
+  path: '/zones/new',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ZonesZoneIdRoute = ZonesZoneIdRouteImport.update({
-  id: '/$zoneId',
-  path: '/$zoneId',
-  getParentRoute: () => ZonesRoute,
+  id: '/zones_/$zoneId',
+  path: '/zones/$zoneId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const NodesNodeIdRoute = NodesNodeIdRouteImport.update({
-  id: '/$nodeId',
-  path: '/$nodeId',
-  getParentRoute: () => NodesRoute,
+  id: '/nodes_/$nodeId',
+  path: '/nodes/$nodeId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/about': typeof AboutRoute
+  '/api-keys': typeof ApiKeysRoute
   '/certificates': typeof CertificatesRoute
   '/intelligence': typeof IntelligenceRoute
   '/live': typeof LiveRoute
   '/login': typeof LoginRoute
-  '/nodes': typeof NodesRouteWithChildren
-  '/zones': typeof ZonesRouteWithChildren
+  '/nodes': typeof NodesRoute
+  '/zones': typeof ZonesRoute
   '/nodes/$nodeId': typeof NodesNodeIdRoute
   '/zones/$zoneId': typeof ZonesZoneIdRoute
   '/zones/new': typeof ZonesNewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/about': typeof AboutRoute
+  '/api-keys': typeof ApiKeysRoute
   '/certificates': typeof CertificatesRoute
   '/intelligence': typeof IntelligenceRoute
   '/live': typeof LiveRoute
   '/login': typeof LoginRoute
-  '/nodes': typeof NodesRouteWithChildren
-  '/zones': typeof ZonesRouteWithChildren
+  '/nodes': typeof NodesRoute
+  '/zones': typeof ZonesRoute
   '/nodes/$nodeId': typeof NodesNodeIdRoute
   '/zones/$zoneId': typeof ZonesZoneIdRoute
   '/zones/new': typeof ZonesNewRoute
@@ -106,22 +106,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/about': typeof AboutRoute
+  '/api-keys': typeof ApiKeysRoute
   '/certificates': typeof CertificatesRoute
   '/intelligence': typeof IntelligenceRoute
   '/live': typeof LiveRoute
   '/login': typeof LoginRoute
-  '/nodes': typeof NodesRouteWithChildren
-  '/zones': typeof ZonesRouteWithChildren
-  '/nodes/$nodeId': typeof NodesNodeIdRoute
-  '/zones/$zoneId': typeof ZonesZoneIdRoute
-  '/zones/new': typeof ZonesNewRoute
+  '/nodes': typeof NodesRoute
+  '/zones': typeof ZonesRoute
+  '/nodes_/$nodeId': typeof NodesNodeIdRoute
+  '/zones_/$zoneId': typeof ZonesZoneIdRoute
+  '/zones_/new': typeof ZonesNewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/about'
+    | '/api-keys'
     | '/certificates'
     | '/intelligence'
     | '/live'
@@ -134,7 +134,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/about'
+    | '/api-keys'
     | '/certificates'
     | '/intelligence'
     | '/live'
@@ -147,27 +147,30 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/about'
+    | '/api-keys'
     | '/certificates'
     | '/intelligence'
     | '/live'
     | '/login'
     | '/nodes'
     | '/zones'
-    | '/nodes/$nodeId'
-    | '/zones/$zoneId'
-    | '/zones/new'
+    | '/nodes_/$nodeId'
+    | '/zones_/$zoneId'
+    | '/zones_/new'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AboutRoute: typeof AboutRoute
+  ApiKeysRoute: typeof ApiKeysRoute
   CertificatesRoute: typeof CertificatesRoute
   IntelligenceRoute: typeof IntelligenceRoute
   LiveRoute: typeof LiveRoute
   LoginRoute: typeof LoginRoute
-  NodesRoute: typeof NodesRouteWithChildren
-  ZonesRoute: typeof ZonesRouteWithChildren
+  NodesRoute: typeof NodesRoute
+  ZonesRoute: typeof ZonesRoute
+  NodesNodeIdRoute: typeof NodesNodeIdRoute
+  ZonesZoneIdRoute: typeof ZonesZoneIdRoute
+  ZonesNewRoute: typeof ZonesNewRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -214,11 +217,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CertificatesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/about': {
-      id: '/about'
-      path: '/about'
-      fullPath: '/about'
-      preLoaderRoute: typeof AboutRouteImport
+    '/api-keys': {
+      id: '/api-keys'
+      path: '/api-keys'
+      fullPath: '/api-keys'
+      preLoaderRoute: typeof ApiKeysRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -228,61 +231,42 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/zones/new': {
-      id: '/zones/new'
-      path: '/new'
+    '/zones_/new': {
+      id: '/zones_/new'
+      path: '/zones/new'
       fullPath: '/zones/new'
       preLoaderRoute: typeof ZonesNewRouteImport
-      parentRoute: typeof ZonesRoute
+      parentRoute: typeof rootRouteImport
     }
-    '/zones/$zoneId': {
-      id: '/zones/$zoneId'
-      path: '/$zoneId'
+    '/zones_/$zoneId': {
+      id: '/zones_/$zoneId'
+      path: '/zones/$zoneId'
       fullPath: '/zones/$zoneId'
       preLoaderRoute: typeof ZonesZoneIdRouteImport
-      parentRoute: typeof ZonesRoute
+      parentRoute: typeof rootRouteImport
     }
-    '/nodes/$nodeId': {
-      id: '/nodes/$nodeId'
-      path: '/$nodeId'
+    '/nodes_/$nodeId': {
+      id: '/nodes_/$nodeId'
+      path: '/nodes/$nodeId'
       fullPath: '/nodes/$nodeId'
       preLoaderRoute: typeof NodesNodeIdRouteImport
-      parentRoute: typeof NodesRoute
+      parentRoute: typeof rootRouteImport
     }
   }
 }
 
-interface NodesRouteChildren {
-  NodesNodeIdRoute: typeof NodesNodeIdRoute
-}
-
-const NodesRouteChildren: NodesRouteChildren = {
-  NodesNodeIdRoute: NodesNodeIdRoute,
-}
-
-const NodesRouteWithChildren = NodesRoute._addFileChildren(NodesRouteChildren)
-
-interface ZonesRouteChildren {
-  ZonesZoneIdRoute: typeof ZonesZoneIdRoute
-  ZonesNewRoute: typeof ZonesNewRoute
-}
-
-const ZonesRouteChildren: ZonesRouteChildren = {
-  ZonesZoneIdRoute: ZonesZoneIdRoute,
-  ZonesNewRoute: ZonesNewRoute,
-}
-
-const ZonesRouteWithChildren = ZonesRoute._addFileChildren(ZonesRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AboutRoute: AboutRoute,
+  ApiKeysRoute: ApiKeysRoute,
   CertificatesRoute: CertificatesRoute,
   IntelligenceRoute: IntelligenceRoute,
   LiveRoute: LiveRoute,
   LoginRoute: LoginRoute,
-  NodesRoute: NodesRouteWithChildren,
-  ZonesRoute: ZonesRouteWithChildren,
+  NodesRoute: NodesRoute,
+  ZonesRoute: ZonesRoute,
+  NodesNodeIdRoute: NodesNodeIdRoute,
+  ZonesZoneIdRoute: ZonesZoneIdRoute,
+  ZonesNewRoute: ZonesNewRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

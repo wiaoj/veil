@@ -2,14 +2,14 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Cryptography;
-using System.Text;
 using Veil.EdgeNodes.Domain;
 using Veil.EdgeNodes.Domain.ValueObjects;
 using Veil.EdgeNodes.Infrastructure.Persistence;
 using Veil.Shared;
 using Wiaoj.Endpoints;
+using Wiaoj.Primitives.Collections;
 using Wiaoj.Primitives.Cryptography.Hashing;
+using Wiaoj.Security;
 
 namespace Veil.EdgeNodes.Features.EdgeNodes.RegisterEdgeNode;
 
@@ -61,8 +61,9 @@ public sealed class RegisterEdgeNodeEndpoint : IEndpoint {
 
         // The plaintext token leaves the control plane exactly once, in this
         // response. Only the SHA-256 hash is persisted.
-        string token = $"vnt_{Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32))}";
-        string tokenHash = Sha256Hash.Compute(token).ToHexString().ToLower();
+        using Secret<byte> rawBytes = Secret<byte>.Generate(32);
+        string token = rawBytes.Expose(bytes => $"vnt_{Convert.ToHexStringLower(bytes)}");
+        HexString tokenHash = Sha256Hash.Compute(token).ToHexStringLower();
 
         Result<EdgeNode> node = EdgeNode.Register(req.Name, address, tokenHash, timeProvider.GetUtcNow());
         if(node.IsFailure) return node.ToProblemDetails();

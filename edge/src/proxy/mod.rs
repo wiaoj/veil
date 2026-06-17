@@ -133,12 +133,21 @@ impl AppState {
             .map(|h| h.to_ascii_lowercase())
             .unwrap_or_else(|_| DEFAULT_SIGNATURE_HEADER.to_owned());
 
+        // Upstream connector that speaks both plain http and TLS (https),
+        // chosen per-request from the upstream URI scheme. webpki roots verify
+        // the upstream certificate chain.
+        let upstream_https = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_webpki_roots()
+            .https_or_http()
+            .enable_http1()
+            .build();
+
         Self {
             config: ConfigStore::new(config),
             limiter: InMemoryLimiter::new(),
             rule_limiter: RateLimiter::in_memory(),
-            client: Client::builder(TokioExecutor::new()).build_http(),
-            buffered_client: Client::builder(TokioExecutor::new()).build_http(),
+            client: Client::builder(TokioExecutor::new()).build(upstream_https.clone()),
+            buffered_client: Client::builder(TokioExecutor::new()).build(upstream_https),
             challenge: ChallengeEngine::new(cookie_name, cookie_ttl),
             node_token,
             push_hmac_key,
@@ -453,7 +462,7 @@ pub async fn handle(
                     state.challenge.issue_challenge(&ctx, zone.challenge.as_ref())
                 }
             }
-            Verdict::Block { .. } => forbidden(ctx.wants_html()),
+            Verdict::Block { .. } => forbidden(ctx.wants_html(), ctx.lang()),
             Verdict::RateLimited { rule_id } => {
                 let retry_after = zone
                     .rules
@@ -461,7 +470,7 @@ pub async fn handle(
                     .find(|r| &r.id == rule_id)
                     .and_then(|r| r.rate_limit)
                     .map_or(60, |p| p.window_secs);
-                rate_limited(retry_after, ctx.wants_html())
+                rate_limited(retry_after, ctx.wants_html(), ctx.lang())
             }
         }
     };
@@ -614,7 +623,7 @@ async fn handle_config_push(
         .allow(&rate_key, CONFIG_PUSH_RATE_LIMIT, CONFIG_PUSH_RATE_WINDOW_SECS)
     {
         warn!(client_ip = %ctx.client_ip, "config push rate limit exceeded");
-        return crate::response::rate_limited(CONFIG_PUSH_RATE_WINDOW_SECS, false);
+        return crate::response::rate_limited(CONFIG_PUSH_RATE_WINDOW_SECS, false, crate::i18n::Lang::En);
     }
 
     // Token check is cheap and body-independent; do it before the read so a
@@ -728,7 +737,7 @@ async fn handle_acme_push(
         .allow(&rate_key, CONFIG_PUSH_RATE_LIMIT, CONFIG_PUSH_RATE_WINDOW_SECS)
     {
         warn!(client_ip = %ctx.client_ip, "acme push rate limit exceeded");
-        return crate::response::rate_limited(CONFIG_PUSH_RATE_WINDOW_SECS, false);
+        return crate::response::rate_limited(CONFIG_PUSH_RATE_WINDOW_SECS, false, crate::i18n::Lang::En);
     }
 
     let token_ok = matches!(

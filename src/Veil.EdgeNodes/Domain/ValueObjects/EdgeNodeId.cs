@@ -2,7 +2,7 @@ using Veil.Shared;
 
 namespace Veil.EdgeNodes.Domain.ValueObjects;
 
-public readonly struct EdgeNodeId : IPrefixedId<EdgeNodeId> {
+public readonly record struct EdgeNodeId : IPrefixedId<EdgeNodeId> {
     public static string Prefix => "edg";
 
     public SnowflakeId Value { get; }

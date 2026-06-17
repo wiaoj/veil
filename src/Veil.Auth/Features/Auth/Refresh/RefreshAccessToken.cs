@@ -36,7 +36,7 @@ public sealed class RefreshAccessTokenEndpoint : IEndpoint {
         if(string.IsNullOrEmpty(req.RefreshToken))
             return Results.Unauthorized();
 
-        string tokenHash = Sha256Hash.Compute(req.RefreshToken).ToHexString().ToLower();
+        string tokenHash = Sha256Hash.Compute(req.RefreshToken).ToHexStringLower();
         DateTimeOffset now = timeProvider.GetUtcNow();
 
         await using AuthDbContext db = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -55,7 +55,7 @@ public sealed class RefreshAccessTokenEndpoint : IEndpoint {
 
         // Rotate: revoke the presented token and link it to its successor.
         string newRefreshToken = $"vrt_{Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32))}";
-        string newRefreshTokenHash = Sha256Hash.Compute(newRefreshToken).ToHexString().ToLower();
+        var newRefreshTokenHash = Sha256Hash.Compute(newRefreshToken).ToHexStringLower();
 
         stored.Rotate(newRefreshTokenHash, now);
         await db.RefreshTokens.AddAsync(

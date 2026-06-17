@@ -180,11 +180,28 @@ impl ChallengeEngine {
         // tier, so verification can't be downgraded below what was issued.
         self.nonce_store.insert(&nonce_hex, NonceInfo { difficulty, tier });
 
+        // Visitor-facing copy is localised from Accept-Language / ?locale.
+        let lang = ctx.lang();
+        let t = crate::i18n::challenge_strings(lang);
+
         let body = TEMPLATE_HTML
             .replace("{logo_svg}", LOGO_SVG)
             .replace("{nonce}", &nonce_hex)
             .replace("{difficulty}", &difficulty.to_string())
-            .replace("{tier}", &tier.as_u8().to_string());
+            .replace("{tier}", &tier.as_u8().to_string())
+            .replace("{lang}", lang.code())
+            .replace("{doc_title}", t.doc_title)
+            .replace("{heading}", t.heading)
+            .replace("{intro}", t.intro)
+            .replace("{noscript}", t.noscript)
+            .replace("{status_verifying}", t.status_verifying)
+            .replace("{hint}", t.hint)
+            .replace("{footer}", t.footer)
+            .replace("{status_redirecting}", t.status_redirecting)
+            .replace("{status_almost}", t.status_almost)
+            .replace("{status_error}", t.status_error)
+            .replace("{status_failed_retry}", t.status_failed_retry)
+            .replace("{status_conn_retry}", t.status_conn_retry);
 
         html(StatusCode::SERVICE_UNAVAILABLE, body)
     }

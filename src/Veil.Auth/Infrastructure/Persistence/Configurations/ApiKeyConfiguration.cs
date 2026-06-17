@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Veil.Auth.Domain;
 using Veil.Auth.Domain.ValueObjects;
+using Wiaoj.Primitives.Collections;
 
 namespace Veil.Auth.Infrastructure.Persistence.Configurations;
 
@@ -22,13 +23,21 @@ public sealed class ApiKeyConfiguration : IEntityTypeConfiguration<ApiKey> {
             .IsRequired();
 
         builder.Property(x => x.KeyHash)
+            .HasConversion(
+                hash => hash.ToString(),
+                value => HexString.Parse(value))
             .HasMaxLength(64)
+            .IsFixedLength()
             .IsRequired();
 
         // Scope list is small and read-only after creation; jsonb keeps the
         // table flat without a join table.
         builder.Property(x => x.Scopes)
-            .HasColumnType("jsonb");
+           .HasConversion(
+               scopes => string.Join(',', scopes.AsEnumerable()), // string.Join, IEnumerable<string> kabul eder
+               value => new EquatableArray<string>(value.Split(',', StringSplitOptions.RemoveEmptyEntries)))
+           .HasMaxLength(500)
+           .IsRequired();
 
         builder.Property(x => x.CreatedBy)
             .HasConversion(

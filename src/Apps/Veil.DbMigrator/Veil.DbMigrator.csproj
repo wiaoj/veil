@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.CommandLine" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.9" />
+  </ItemGroup>
+
+  <!-- All modules that own a DbContext. Their EF migrations live inside each
+       assembly, so referencing the projects is enough for Database.Migrate(). -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Veil.Auth\Veil.Auth.csproj" />
+    <ProjectReference Include="..\..\Veil.Certificates\Veil.Certificates.csproj" />
+    <ProjectReference Include="..\..\Veil.EdgeNodes\Veil.EdgeNodes.csproj" />
+    <ProjectReference Include="..\..\Veil.Infrastructure.Security\Veil.Infrastructure.Security.csproj" />
+    <ProjectReference Include="..\..\Veil.Zones\Veil.Zones.csproj" />
+  </ItemGroup>
+
+</Project>

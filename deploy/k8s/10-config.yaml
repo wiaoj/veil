@@ -17,7 +17,6 @@ data:
 #     --from-literal=ConnectionStrings__Default='Host=postgres;...' \
 #     --from-literal=ConfigSync__PushHmacKey='<64-hex>' \
 #     --from-literal=Auth__SigningKey='<key>' \
-#     --from-literal=Certificates__EncryptionKey='<64-hex>' \
 #     --from-literal=ClickHouse__Password='<pw>' \
 #     --from-literal=VEIL_PUSH_HMAC_KEY='<64-hex>'
 apiVersion: v1
@@ -30,7 +29,6 @@ stringData:
   ConnectionStrings__Default: "Host=postgres;Port=5432;Database=veil;Username=veil;Password=CHANGE_ME"
   ConfigSync__PushHmacKey: "CHANGE_ME_64_HEX"
   Auth__SigningKey: "CHANGE_ME"
-  Certificates__EncryptionKey: ""
   ClickHouse__Password: "CHANGE_ME"
   VEIL_PUSH_HMAC_KEY: "CHANGE_ME_64_HEX"
   # Edge fleet credentials. A DaemonSet shares one pod spec, so all edge pods

@@ -8,7 +8,7 @@ using Veil.Certificates;
 using Veil.Certificates.Domain;
 using Veil.Certificates.Domain.Enums;
 using Veil.Certificates.Infrastructure.Persistence;
-using Veil.Certificates.Infrastructure.Security;
+using Wiaoj.Security;
 
 namespace Veil.Api.Acme;
 
@@ -17,16 +17,16 @@ namespace Veil.Api.Acme;
 /// (HTTP-01). The challenge token is published to every enabled edge node
 /// (any node behind the hostname can answer), the order is polled up to
 /// <see cref="CertificatesOptions.OrderTimeoutSeconds"/>, and the private
-/// key is AES-256-GCM encrypted before it touches the database.
+/// key is encrypted via <see cref="ISecretProtector{PrivateKeySecretContext}"/>
+/// before it touches the database.
 ///
-/// Requires <c>Certificates:AcmeDirectoryUrl</c> and
-/// <c>Certificates:EncryptionKey</c>; unset → the worker idles. The ACME
-/// account is created per service lifetime (account key persistence comes
-/// with multi-instance support).
+/// Requires <c>Certificates:AcmeDirectoryUrl</c>; unset → the worker idles.
+/// Key encryption is handled by Wiaoj.Security's managed key store.
 /// </summary>
 public sealed class AcmeProvisioningService(
     IDbContextFactory<CertificatesDbContext> certsDbFactory,
     EdgeChallengePublisher challengePublisher,
+    ISecretProtector<PrivateKeySecretContext> protector,
     TimeProvider timeProvider,
     IOptions<CertificatesOptions> options,
     ILogger<AcmeProvisioningService> logger) : BackgroundService {
@@ -39,10 +39,9 @@ public sealed class AcmeProvisioningService(
     private AcmeContext? _acme;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
-        PrivateKeyProtector? protector = PrivateKeyProtector.FromHex(this._options.EncryptionKey);
-        if(this._options.AcmeDirectoryUrl is null || protector is null) {
+        if(this._options.AcmeDirectoryUrl is null) {
             logger.LogInformation(
-                "ACME worker disabled: Certificates:AcmeDirectoryUrl and Certificates:EncryptionKey (64 hex) are required");
+                "ACME worker disabled: Certificates:AcmeDirectoryUrl is required");
             return;
         }
 
@@ -51,7 +50,7 @@ public sealed class AcmeProvisioningService(
 
         while(!stoppingToken.IsCancellationRequested) {
             try {
-                await ProcessDueCertificatesAsync(protector, stoppingToken);
+                await ProcessDueCertificatesAsync(stoppingToken);
             }
             catch(OperationCanceledException) when(stoppingToken.IsCancellationRequested) {
                 break;
@@ -69,7 +68,7 @@ public sealed class AcmeProvisioningService(
         }
     }
 
-    private async Task ProcessDueCertificatesAsync(PrivateKeyProtector protector, CancellationToken cancellationToken) {
+    private async Task ProcessDueCertificatesAsync(CancellationToken cancellationToken) {
         await using CertificatesDbContext db = await certsDbFactory.CreateDbContextAsync(cancellationToken);
 
         DateTimeOffset now = timeProvider.GetUtcNow();
@@ -84,7 +83,7 @@ public sealed class AcmeProvisioningService(
 
         foreach(Certificate certificate in due) {
             try {
-                await ProvisionAsync(certificate, protector, cancellationToken);
+                await ProvisionAsync(certificate, cancellationToken);
             }
             catch(OperationCanceledException) when(cancellationToken.IsCancellationRequested) {
                 throw;
@@ -102,7 +101,6 @@ public sealed class AcmeProvisioningService(
 
     private async Task ProvisionAsync(
         Certificate certificate,
-        PrivateKeyProtector protector,
         CancellationToken cancellationToken) {
         IAccountContext account = await GetAccountAsync();
         AcmeContext acme = this._acme!;
@@ -148,7 +146,7 @@ public sealed class AcmeProvisioningService(
         // carries the full chain — concatenate it directly.
         string chainPem = string.Join('\n',
             new[] { chain.Certificate.ToPem() }.Concat(chain.Issuers.Select(i => i.ToPem())));
-        string encryptedKey = protector.Encrypt(privateKey.ToPem());
+        EncryptedSecret<PrivateKeySecretContext> encryptedKey = protector.Protect(privateKey.ToPem());
 
         using X509Certificate2 leaf = X509Certificate2.CreateFromPem(chainPem);
         Result<Success> issued = certificate.MarkIssued(

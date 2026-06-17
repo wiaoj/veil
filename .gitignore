@@ -604,3 +604,6 @@ vite.config.ts.timestamp-*
 .env
 !.env.example
 deploy/docker/.env
+
+# Edge last-known-good config snapshot (runtime artifact)
+edge/config-cache.json

@@ -2,6 +2,17 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import type { LiveLogEvent } from '#/lib/api'
 import { UnauthorizedError, apiStream, hasSession } from '#/lib/api'
+import { PageHeader } from '@/components/PageState'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 export const Route = createFileRoute('/live')({
   component: LivePage,
@@ -10,12 +21,12 @@ export const Route = createFileRoute('/live')({
 const MAX_ROWS = 100
 
 const VERDICT_TONE: Record<string, string> = {
-  allow: 'text-emerald-600',
-  block: 'text-red-600',
-  challenge: 'text-amber-600',
-  challenge_pass: 'text-sky-600',
-  rate_limited: 'text-purple-600',
-  no_zone: 'text-gray-400',
+  allow: 'text-emerald-600 dark:text-emerald-400',
+  block: 'text-destructive',
+  challenge: 'text-amber-600 dark:text-amber-400',
+  challenge_pass: 'text-sky-600 dark:text-sky-400',
+  rate_limited: 'text-violet-600 dark:text-violet-400',
+  no_zone: 'text-muted-foreground',
 }
 
 function LivePage() {
@@ -67,64 +78,67 @@ function LivePage() {
   }, [navigate])
 
   return (
-    <main className="mx-auto max-w-5xl space-y-4 px-4 py-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Canlı trafik</h1>
-        <div className="flex items-center gap-3 text-sm">
-          <span className="flex items-center gap-1.5 text-gray-500">
-            <span
-              className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-gray-400'}`}
-            />
-            {connected ? 'bağlı' : 'yeniden bağlanıyor…'}
-          </span>
-          <button
-            onClick={() => setPaused((p) => !p)}
-            className="rounded-md border border-gray-300 px-3 py-1 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900"
-          >
-            {paused ? 'Devam' : 'Duraklat'}
-          </button>
-        </div>
-      </div>
-
-      <p className="text-xs text-gray-400">
-        Bağlandıktan sonra gelen istekler akar (son {MAX_ROWS} kayıt). Duraklatma akışı kesmez,
-        sadece tabloyu dondurur.
-      </p>
+    <div className="space-y-4">
+      <PageHeader
+        title="Canlı trafik"
+        description={`Bağlandıktan sonra gelen istekler akar (son ${MAX_ROWS} kayıt). Duraklatma akışı kesmez, sadece tabloyu dondurur.`}
+        action={
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-muted-foreground flex items-center gap-1.5">
+              <span
+                className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-muted-foreground/50'}`}
+              />
+              {connected ? 'bağlı' : 'yeniden bağlanıyor…'}
+            </span>
+            <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
+              {paused ? 'Devam' : 'Duraklat'}
+            </Button>
+          </div>
+        }
+      />
 
       {rows.length === 0 ? (
-        <p className="text-sm text-gray-500">İstek bekleniyor…</p>
+        <Card className="text-muted-foreground items-center py-12 text-center text-sm">
+          İstek bekleniyor…
+        </Card>
       ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-gray-500 dark:border-gray-800">
-              <th className="py-2">Zaman</th>
-              <th>Zone</th>
-              <th>Metot</th>
-              <th>Yol</th>
-              <th>Durum</th>
-              <th>Verdict</th>
-              <th>IP</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={`${r.tsMs}-${i}`} className="border-b border-gray-100 dark:border-gray-900">
-                <td className="py-1.5 tabular-nums text-gray-500">
-                  {new Date(r.tsMs).toLocaleTimeString()}
-                </td>
-                <td>{r.zone}</td>
-                <td className="font-mono text-xs">{r.method}</td>
-                <td className="max-w-xs truncate font-mono text-xs" title={r.path}>
-                  {r.path}
-                </td>
-                <td className="tabular-nums">{r.status}</td>
-                <td className={VERDICT_TONE[r.verdict] ?? ''}>{r.verdict}</td>
-                <td className="font-mono text-xs text-gray-500">{r.clientIp}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Card className="overflow-hidden py-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Zaman</TableHead>
+                <TableHead>Zone</TableHead>
+                <TableHead>Metot</TableHead>
+                <TableHead>Yol</TableHead>
+                <TableHead>Durum</TableHead>
+                <TableHead>Verdict</TableHead>
+                <TableHead>IP</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r, i) => (
+                <TableRow key={`${r.tsMs}-${i}`}>
+                  <TableCell className="text-muted-foreground tabular-nums">
+                    {new Date(r.tsMs).toLocaleTimeString()}
+                  </TableCell>
+                  <TableCell>{r.zone}</TableCell>
+                  <TableCell className="font-mono text-xs">{r.method}</TableCell>
+                  <TableCell className="max-w-xs truncate font-mono text-xs" title={r.path}>
+                    {r.path}
+                  </TableCell>
+                  <TableCell className="tabular-nums">{r.status}</TableCell>
+                  <TableCell className={`font-medium ${VERDICT_TONE[r.verdict] ?? ''}`}>
+                    {r.verdict}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground font-mono text-xs">
+                    {r.clientIp}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
       )}
-    </main>
+    </div>
   )
 }

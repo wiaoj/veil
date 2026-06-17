@@ -14,9 +14,9 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="StackExchange.Redis" Version="2.13.17" />
-    <PackageReference Include="Tyto" Version="0.0.1-alpha.90" />
-    <PackageReference Include="Tyto.DependencyInjection" Version="0.0.1-alpha.90" />
-    <PackageReference Include="Tyto.Transports.InMemory" Version="0.0.1-alpha.90" />
+    <PackageReference Include="Tyto" Version="0.0.1-alpha.91" />
+    <PackageReference Include="Tyto.DependencyInjection" Version="0.0.1-alpha.91" />
+    <PackageReference Include="Tyto.Transports.InMemory" Version="0.0.1-alpha.91" />
   </ItemGroup>
 
   <ItemGroup>
@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\Veil.Auth\Veil.Auth.csproj" />
     <ProjectReference Include="..\..\Veil.Certificates\Veil.Certificates.csproj" />
     <ProjectReference Include="..\..\Veil.EdgeNodes\Veil.EdgeNodes.csproj" />
+    <ProjectReference Include="..\..\Veil.Infrastructure.Security\Veil.Infrastructure.Security.csproj" />
     <ProjectReference Include="..\..\Veil.Zones\Veil.Zones.csproj" />
   </ItemGroup>
 

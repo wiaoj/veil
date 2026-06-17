@@ -2,6 +2,9 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import type { TrafficIncident } from '#/lib/api'
 import { UnauthorizedError, apiGet, hasSession } from '#/lib/api'
+import { PageHeader, PageState } from '@/components/PageState'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
 
 export const Route = createFileRoute('/intelligence')({
   component: IntelligencePage,
@@ -10,80 +13,88 @@ export const Route = createFileRoute('/intelligence')({
 const REFRESH_MS = 10_000
 
 const ACTION_TONE: Record<string, string> = {
-  Enforced: 'text-red-600',
-  Shadowed: 'text-amber-600',
-  Suggested: 'text-sky-600',
-  None: 'text-gray-400',
+  Enforced: 'text-destructive',
+  Shadowed: 'text-amber-600 dark:text-amber-400',
+  Suggested: 'text-sky-600 dark:text-sky-400',
+  None: 'text-muted-foreground',
 }
 
 function scoreTone(score: number): string {
-  if (score >= 80) return 'text-red-600'
-  if (score >= 60) return 'text-amber-600'
-  return 'text-gray-500'
+  if (score >= 80) return 'text-destructive'
+  if (score >= 60) return 'text-amber-600 dark:text-amber-400'
+  return 'text-muted-foreground'
 }
 
 function IncidentCard({ incident }: { incident: TrafficIncident }) {
   const rule = incident.verdict?.suggestedRule ?? incident.suggestedRule
   return (
-    <article className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] p-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="flex items-baseline gap-3">
-          <span className="font-mono text-sm font-semibold">{incident.zone}</span>
-          <span className="rounded-full border border-[var(--chip-line)] px-2 py-0.5 text-xs">
-            {incident.verdict?.classification ?? incident.classification}
+    <Card>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div className="flex items-baseline gap-3">
+            <span className="font-mono text-sm font-semibold">{incident.zone}</span>
+            <Badge variant="outline">
+              {incident.verdict?.classification ?? incident.classification}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-3 text-xs">
+            <span className={`font-semibold ${scoreTone(incident.anomalyScore)}`}>
+              skor {incident.anomalyScore}
+            </span>
+            <span className={`font-medium ${ACTION_TONE[incident.action] ?? ''}`}>
+              {incident.action}
+            </span>
+            <span className="text-muted-foreground">
+              {new Date(incident.detectedAtUtc).toLocaleTimeString()}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
+          {incident.signals.map((s) => (
+            <span
+              key={s}
+              className="bg-muted text-muted-foreground rounded-md px-2 py-0.5 font-mono text-[11px]"
+            >
+              {s}
+            </span>
+          ))}
+        </div>
+
+        {incident.verdict?.summary && (
+          <p className="text-muted-foreground text-sm">{incident.verdict.summary}</p>
+        )}
+
+        <div className="text-muted-foreground grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-4">
+          <span>
+            hız{' '}
+            <b className="text-foreground tabular-nums">{incident.ratePerSecond.toFixed(0)}/s</b> (~
+            {incident.baselineRatePerSecond.toFixed(0)}/s)
+          </span>
+          <span>
+            blok oranı{' '}
+            <b className="text-foreground tabular-nums">
+              {(incident.blockedRatio * 100).toFixed(0)}%
+            </b>
+          </span>
+          <span>
+            farklı IP <b className="text-foreground tabular-nums">{incident.distinctIps}</b>
+          </span>
+          <span className="truncate" title={incident.topIps.map((t) => t.value).join(', ')}>
+            en çok IP <b className="text-foreground font-mono">{incident.topIps[0]?.value ?? '—'}</b>
           </span>
         </div>
-        <div className="flex items-center gap-3 text-xs">
-          <span className={`font-semibold ${scoreTone(incident.anomalyScore)}`}>
-            skor {incident.anomalyScore}
-          </span>
-          <span className={ACTION_TONE[incident.action] ?? ''}>{incident.action}</span>
-          <span className="text-gray-400">
-            {new Date(incident.detectedAtUtc).toLocaleTimeString()}
-          </span>
-        </div>
-      </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        {incident.signals.map((s) => (
-          <span
-            key={s}
-            className="rounded-md bg-[var(--link-bg-hover)] px-2 py-0.5 font-mono text-[11px] text-[var(--sea-ink-soft)]"
-          >
-            {s}
-          </span>
-        ))}
-      </div>
-
-      {incident.verdict?.summary && (
-        <p className="text-sm text-[var(--sea-ink-soft)]">{incident.verdict.summary}</p>
-      )}
-
-      <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-gray-500 sm:grid-cols-4">
-        <span>
-          hız <b className="tabular-nums">{incident.ratePerSecond.toFixed(0)}/s</b> (~
-          {incident.baselineRatePerSecond.toFixed(0)}/s)
-        </span>
-        <span>
-          blok oranı <b className="tabular-nums">{(incident.blockedRatio * 100).toFixed(0)}%</b>
-        </span>
-        <span>
-          farklı IP <b className="tabular-nums">{incident.distinctIps}</b>
-        </span>
-        <span className="truncate" title={incident.topIps.map((t) => t.value).join(', ')}>
-          en çok IP <b className="font-mono">{incident.topIps[0]?.value ?? '—'}</b>
-        </span>
-      </div>
-
-      {rule && (
-        <div className="rounded-md border border-dashed border-[var(--chip-line)] px-3 py-2 text-xs">
-          <span className="text-gray-500">önerilen kural: </span>
-          <span className="font-mono">
-            {rule.conditionType} = {rule.value} → {rule.action}
-          </span>
-        </div>
-      )}
-    </article>
+        {rule && (
+          <div className="border-border text-muted-foreground rounded-md border border-dashed px-3 py-2 text-xs">
+            önerilen kural:{' '}
+            <span className="text-foreground font-mono">
+              {rule.conditionType} = {rule.value} → {rule.action}
+            </span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -126,22 +137,20 @@ function IntelligencePage() {
     }
   }, [navigate])
 
-  return (
-    <main className="mx-auto max-w-4xl space-y-4 px-4 py-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Yapay zeka analizi</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          ML.NET tabanlı canlı anomali tespiti ({REFRESH_MS / 1000}s'de bir yenilenir). Her olay
-          bellekte saptanır; yüksek güvenli öneriler enforce, diğerleri shadow modunda denenir.
-        </p>
-      </div>
+  if (loading) return <PageState>Yükleniyor…</PageState>
 
-      {loading && <p className="text-sm text-gray-500">Yükleniyor…</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {!loading && !error && (!data || data.length === 0) && (
-        <p className="text-sm text-gray-500">
+  return (
+    <div className="mx-auto max-w-4xl space-y-4">
+      <PageHeader
+        title="Yapay zeka analizi"
+        description={`ML.NET tabanlı canlı anomali tespiti (${REFRESH_MS / 1000}s'de bir yenilenir). Her olay bellekte saptanır; yüksek güvenli öneriler enforce, diğerleri shadow modunda denenir.`}
+      />
+
+      {error && <p className="text-destructive text-sm">{error}</p>}
+      {!error && (!data || data.length === 0) && (
+        <Card className="text-muted-foreground items-center py-12 text-center text-sm">
           Henüz anomali yok. (Intelligence katmanı kapalıysa bu liste boş kalır.)
-        </p>
+        </Card>
       )}
 
       <div className="space-y-3">
@@ -149,6 +158,6 @@ function IntelligencePage() {
           <IncidentCard key={incident.id} incident={incident} />
         ))}
       </div>
-    </main>
+    </div>
   )
 }

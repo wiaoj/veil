@@ -44,11 +44,13 @@ pub fn json_response(status: StatusCode, body: &str) -> Response<ProxyBody> {
         .expect("static response")
 }
 
-pub fn forbidden(wants_html: bool) -> Response<ProxyBody> {
+pub fn forbidden(wants_html: bool, lang: crate::i18n::Lang) -> Response<ProxyBody> {
     if wants_html {
+        let t = crate::i18n::error_strings(lang);
         let body = ERROR_HTML
-            .replace("{title}", "Access Denied")
-            .replace("{detail}", "You do not have permission to access this resource.");
+            .replace("{lang}", lang.code())
+            .replace("{title}", t.forbidden_title)
+            .replace("{detail}", t.forbidden_detail);
         html(StatusCode::FORBIDDEN, body)
     } else {
         let json = r#"{"type":"https://docs.veil.io/probs/forbidden","title":"Forbidden","status":403,"detail":"Access denied by Edge policy."}"#;
@@ -60,12 +62,14 @@ pub fn forbidden(wants_html: bool) -> Response<ProxyBody> {
     }
 }
 
-pub fn rate_limited(retry_after_secs: u64, wants_html: bool) -> Response<ProxyBody> {
+pub fn rate_limited(retry_after_secs: u64, wants_html: bool, lang: crate::i18n::Lang) -> Response<ProxyBody> {
     if wants_html {
+        let t = crate::i18n::error_strings(lang);
         let body = ERROR_HTML
-            .replace("{title}", "Too Many Requests")
-            .replace("{detail}", &format!("You have exceeded your rate limit. Please try again in {} seconds.", retry_after_secs));
-        
+            .replace("{lang}", lang.code())
+            .replace("{title}", t.rate_limited_title)
+            .replace("{detail}", &t.rate_limited_detail_fmt.replace("{}", &retry_after_secs.to_string()));
+
         Response::builder()
             .status(StatusCode::TOO_MANY_REQUESTS)
             .header(CONTENT_TYPE, "text/html; charset=utf-8")

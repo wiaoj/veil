@@ -7,13 +7,6 @@ public sealed class CertificatesOptions {
     public const string SectionName = "Certificates";
 
     /// <summary>
-    /// AES-256-GCM key protecting private keys at rest, 64 hex chars.
-    /// Unset → the ACME worker is disabled (keys must never be stored
-    /// plaintext).
-    /// </summary>
-    public string? EncryptionKey { get; init; }
-
-    /// <summary>
     /// ACME v2 directory URL. Unset → the ACME worker is disabled.
     /// Let's Encrypt staging: https://acme-staging-v02.api.letsencrypt.org/directory
     /// </summary>

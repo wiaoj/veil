@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Veil.EdgeNodes.Domain;
 using Veil.EdgeNodes.Domain.ValueObjects;
+using Wiaoj.Primitives.Collections;
 
 namespace Veil.EdgeNodes.Infrastructure.Persistence.Configurations;
 
@@ -32,7 +33,11 @@ public sealed class EdgeNodeConfiguration : IEntityTypeConfiguration<EdgeNode> {
             .IsRequired();
 
         builder.Property(x => x.TokenHash)
+            .HasConversion(
+                hash => hash.ToString(),
+                value => HexString.Parse(value))
             .HasMaxLength(64)
+            .IsFixedLength()
             .IsRequired();
 
         builder.Property(x => x.Status)

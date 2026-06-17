@@ -9,10 +9,10 @@
   <ItemGroup>
     <!-- Tyto.Abstractions for IEvent/[Message]; the Wiaoj packages only
          satisfy the global usings injected by src/Directory.Build.props. -->
-    <PackageReference Include="Tyto.Abstractions" Version="0.0.1-alpha.90" />
-    <PackageReference Include="Wiaoj.Ddd.Abstractions" Version="0.0.1-alpha.75" />
-    <PackageReference Include="Wiaoj.Primitives" Version="0.0.1-alpha.75" />
-    <PackageReference Include="Wiaoj.Results" Version="0.0.1-alpha.75" />
+    <PackageReference Include="Tyto.Abstractions" Version="0.0.1-alpha.91" />
+    <PackageReference Include="Wiaoj.Ddd.Abstractions" Version="0.0.1-alpha.80" />
+    <PackageReference Include="Wiaoj.Primitives" Version="0.0.1-alpha.80" />
+    <PackageReference Include="Wiaoj.Results" Version="0.0.1-alpha.80" />
   </ItemGroup>
 
 </Project>

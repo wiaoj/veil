@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="tr">
+<html lang="{lang}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bağlantı Doğrulanıyor &mdash; Veil</title>
+  <title>{doc_title} &mdash; Veil</title>
   <style>
     :root {
       --bg: #09090b;
@@ -171,12 +171,12 @@
       {logo_svg}
     </div>
 
-    <h1>Bağlantınız doğrulanıyor</h1>
-    <p>Veil, istenen sayfaya erişiminizden önce tarayıcınızı doğruluyor. Bu işlem otomatik olarak gerçekleşir ve yalnızca birkaç saniye sürer.</p>
+    <h1>{heading}</h1>
+    <p>{intro}</p>
 
     <noscript>
       <p style="color: #ef4444; font-weight: 500;">
-        Devam etmek için JavaScript gereklidir. Lütfen tarayıcı ayarlarınızdan JavaScript'i etkinleştirin.
+        {noscript}
       </p>
     </noscript>
 
@@ -184,9 +184,9 @@
       <div class="progress-bar">
         <div class="progress-fill solving" id="progressFill"></div>
       </div>
-      <div class="status-text" id="statusText">Doğrulanıyor&hellip;</div>
+      <div class="status-text" id="statusText">{status_verifying}</div>
       <div class="status-text" id="interactPrompt" style="display:none;margin-top:0.5rem;">
-        Doğrulamayı tamamlamak için imlecinizi hareket ettirin veya ekrana dokunun.
+        {hint}
       </div>
     </div>
 
@@ -194,7 +194,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
       </svg>
-      Veil Edge tarafından korunmaktadır
+      {footer}
     </div>
   </div>
 
@@ -353,11 +353,11 @@
       } else if (msg.type === "solved") {
         fill.style.width = "100%";
         fill.classList.remove("solving");
-        status.textContent = "Doğrulandı, yönlendiriliyorsunuz\u2026";
+        status.textContent = "{status_redirecting}";
         status.className = "status-text success";
         solvedCounter = msg.counter;
         if (TIER === 2 && (!behavior || behavior.count < MIN_EVENTS)) {
-          status.textContent = "Neredeyse tamam…";
+          status.textContent = "{status_almost}";
           status.className = "status-text";
         }
         maybeSubmit();
@@ -365,7 +365,7 @@
     };
 
     worker.onerror = function() {
-      status.textContent = "Bir hata oluştu. Sayfayı yenileyin.";
+      status.textContent = "{status_error}";
       status.className = "status-text error";
     };
 
@@ -374,7 +374,7 @@
     // ── Submit solution ────────────────────────────────
     function submitSolution(counterHex, behaviorData) {
       prompt.style.display = "none";
-      status.textContent = "Doğrulandı, yönlendiriliyorsunuz…";
+      status.textContent = "{status_redirecting}";
       status.className = "status-text success";
       var xhr = new XMLHttpRequest();
       xhr.open("POST", VERIFY_URL, true);
@@ -383,13 +383,13 @@
         if (xhr.status === 200) {
           setTimeout(function() { location.reload(); }, 500);
         } else {
-          status.textContent = "Doğrulama başarısız. Tekrar deneniyor\u2026";
+          status.textContent = "{status_failed_retry}";
           status.className = "status-text error";
           setTimeout(function() { location.reload(); }, 2000);
         }
       };
       xhr.onerror = function() {
-        status.textContent = "Bağlantı hatası. Tekrar deneniyor\u2026";
+        status.textContent = "{status_conn_retry}";
         status.className = "status-text error";
         setTimeout(function() { location.reload(); }, 2000);
       };

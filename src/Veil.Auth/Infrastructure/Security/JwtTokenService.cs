@@ -2,9 +2,11 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
+using System.Text;
 using Veil.Auth.Domain;
 using Veil.Auth.Domain.ValueObjects;
 using Veil.Shared;
+using Wiaoj.Security;
 
 namespace Veil.Auth.Infrastructure.Security;
 
@@ -18,6 +20,7 @@ public sealed class JwtTokenService(
     IOptions<AuthOptions> options,
     SigningKeyRing keyRing,
     IObfuscator<UserId> userObfuscator,
+    ISecretProtector<EmailSecretContext> emailProtector,
     TimeProvider timeProvider) {
 
     private readonly AuthOptions _options = options.Value;
@@ -32,19 +35,22 @@ public sealed class JwtTokenService(
 
         DateTimeOffset now = timeProvider.GetUtcNow();
 
-        SecurityTokenDescriptor descriptor = new() {
-            Issuer = this._options.Issuer,
-            Audience = this._options.Audience,
-            IssuedAt = now.UtcDateTime,
-            NotBefore = now.UtcDateTime,
-            Expires = now.Add(this.AccessTokenLifetime).UtcDateTime,
-            Subject = new ClaimsIdentity([
-                new Claim(JwtRegisteredClaimNames.Sub, userObfuscator.Encode(user.Id)),
-                new Claim(JwtRegisteredClaimNames.Email, user.Email),
-                new Claim(ClaimTypes.Role, user.Role.ToString()),
+        using Secret<byte> plainEmail = emailProtector.Unprotect(user.EncryptedEmail);
+        SecurityTokenDescriptor descriptor = plainEmail.Expose(emailBytes => {
+            return new SecurityTokenDescriptor() {
+                Issuer = this._options.Issuer,
+                Audience = this._options.Audience,
+                IssuedAt = now.UtcDateTime,
+                NotBefore = now.UtcDateTime,
+                Expires = now.Add(this.AccessTokenLifetime).UtcDateTime,
+                Subject = new ClaimsIdentity([
+                    new Claim(JwtRegisteredClaimNames.Sub, userObfuscator.Encode(user.Id)),
+                    new Claim(JwtRegisteredClaimNames.Email, Encoding.UTF8.GetString(emailBytes)),
+                    new Claim(ClaimTypes.Role, user.Role.ToString()),
             ]),
-            SigningCredentials = keyRing.ActiveCredentials
-        };
+                SigningCredentials = keyRing.ActiveCredentials
+            };
+        });
 
         return this._handler.CreateToken(descriptor);
     }

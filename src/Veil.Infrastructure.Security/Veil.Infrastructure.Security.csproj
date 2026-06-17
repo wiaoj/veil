@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+	
+	<ItemGroup>
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.9" />
+		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
+		<PackageReference Include="Wiaoj.Security.EntityFrameworkCore" Version="0.0.1-alpha.80" />
+		<PackageReference Include="Wiaoj.Security.Rotation" Version="0.0.1-alpha.80" />
+	</ItemGroup>
+	
+	<ItemGroup>
+	  <ProjectReference Include="..\..\..\libraries\src\Modulith\Wiaoj.Modulith\Wiaoj.Modulith.csproj" />
+	  <ProjectReference Include="..\Veil.Shared\Veil.Shared.csproj" />
+	</ItemGroup>
+	
+	<ItemGroup>
+	  <Folder Include="Infrastructure\Persistence\" />
+	</ItemGroup>
+</Project>
