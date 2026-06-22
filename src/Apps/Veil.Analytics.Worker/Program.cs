@@ -22,15 +22,31 @@ builder.Services.AddModulith(builder.Configuration, builder.Environment, modules
 });
 builder.Services.AddModulithAspNetCore();
 
-// Tyto RPC server (Phase 12): serves the live AI incident feed to the control
-// plane over RPC-over-HTTP under the /rpc prefix, replacing the bespoke
-// /intelligence/incidents HTTP proxy. Handlers resolve from DI (IncidentStore).
+// Tyto RPC (Phase 12). Server: serves the live AI incident feed to the control
+// plane under /rpc (replaces the /intelligence/incidents HTTP proxy). Client:
+// applies AI-suggested rules by calling the control plane, replacing the bespoke
+// HTTP rule applier. The X-Api-Key default header carries the control plane's
+// API-key auth so the privileged rule-creation path stays protected.
+var intelligenceSection = builder.Configuration.GetSection(
+    Veil.Analytics.Intelligence.IntelligenceOptions.SectionName);
+string controlPlaneRpcUrl =
+    (intelligenceSection["ControlPlaneUrl"] ?? "http://localhost:5210").TrimEnd('/') + "/rpc";
+string? controlPlaneApiKey = intelligenceSection["ControlPlaneApiKey"];
+
 builder.AddTyto(tyto =>
-    tyto.AddRpc(rpc =>
+    tyto.AddRpc(rpc => {
         rpc.AddServer(server => {
             server.RegisterHandlersFromAssemblyContaining<GetIncidentsHandler>();
             server.ListenOverHttp(http => http.WithPrefix("/rpc"));
-        })));
+        });
+        rpc.AddClient(client =>
+            client.UseHttp(http => {
+                if(!string.IsNullOrWhiteSpace(controlPlaneApiKey))
+                    http.WithHeader("X-Api-Key", controlPlaneApiKey);
+                http.ConnectTo("control-plane", new Uri(controlPlaneRpcUrl))
+                    .Handles<Veil.Analytics.Intelligence.ApplyAiRuleRequest>();
+            }));
+    }));
 
 // OpenTelemetry tracing + metrics (opt-in via OTEL_EXPORTER_OTLP_ENDPOINT).
 builder.Services.AddVeilTelemetry(builder.Configuration, "veil-analytics");

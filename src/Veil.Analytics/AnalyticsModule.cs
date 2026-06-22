@@ -61,12 +61,11 @@ public sealed class AnalyticsModule : IModule {
                 services.AddSingleton<IAnalystClient, NullAnalystClient>();
             }
 
-            // Real rule application calls Veil.Api; without an API key we only
-            // log the decision (the prototype default).
+            // Real rule application calls Veil.Api over Tyto RPC (Phase 12);
+            // without an API key we only log the decision (the prototype default).
+            // The RPC client + X-Api-Key header are configured in the worker host.
             if(!string.IsNullOrWhiteSpace(intelligence.ControlPlaneApiKey)) {
-                services.AddHttpClient(HttpRuleApplier.HttpClientName,
-                    client => client.Timeout = TimeSpan.FromSeconds(10));
-                services.AddSingleton<IRuleApplier, HttpRuleApplier>();
+                services.AddSingleton<IRuleApplier, RpcRuleApplier>();
             }
             else {
                 services.AddSingleton<IRuleApplier, LoggingRuleApplier>();

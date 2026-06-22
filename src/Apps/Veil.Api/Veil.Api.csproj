@@ -21,6 +21,9 @@
     <PackageReference Include="Tyto.Rpc" Version="0.0.1-alpha.91" />
     <PackageReference Include="Tyto.Rpc.Client" Version="0.0.1-alpha.91" />
     <PackageReference Include="Tyto.Rpc.Http" Version="0.0.1-alpha.91" />
+    <!-- RPC server: control plane serves AI rule application (Phase 12 Slice 2). -->
+    <PackageReference Include="Tyto.Rpc.Server" Version="0.0.1-alpha.91" />
+    <PackageReference Include="Tyto.Rpc.Hosting.AspNetCore" Version="0.0.1-alpha.91" />
   </ItemGroup>
 
   <ItemGroup>

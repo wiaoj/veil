@@ -6,6 +6,8 @@ using Tyto.DependencyInjection;
 using Tyto.Rpc;
 using Tyto.Rpc.Client;
 using Tyto.Rpc.Http;
+using Tyto.Rpc.Hosting.AspNetCore;
+using Tyto.Rpc.Server;
 using Veil.Analytics;
 using Veil.Analytics.Intelligence;
 using Veil.Api.ConfigSync;
@@ -79,16 +81,22 @@ builder.AddTyto(tyto => {
         });
     });
 
-    // Tyto RPC client (Phase 12): the dashboard incident feed now calls the
-    // analytics worker over RPC-over-HTTP instead of a bespoke HttpClient proxy.
+    // Tyto RPC (Phase 12). Client: the dashboard incident feed calls the analytics
+    // worker over RPC-over-HTTP. Server: serves AI rule application back to the
+    // worker (ApplyAiRuleHandler) under /rpc, behind the default API-key auth.
     string workerRpcUrl =
         (builder.Configuration.GetSection("Intelligence")["WorkerUrl"] ?? "http://localhost:5001")
             .TrimEnd('/') + "/rpc";
-    tyto.AddRpc(rpc =>
+    tyto.AddRpc(rpc => {
         rpc.AddClient(client =>
             client.UseHttp(http =>
                 http.ConnectTo("intelligence", new Uri(workerRpcUrl))
-                    .Handles<GetIncidentsRequest>())));
+                    .Handles<GetIncidentsRequest>()));
+        rpc.AddServer(server => {
+            server.RegisterHandlersFromAssemblyContaining<Veil.Api.Internal.ApplyAiRuleHandler>();
+            server.ListenOverHttp(http => http.WithPrefix("/rpc"));
+        });
+    });
 });
 
 // Config sync: pushes signed zone snapshots to edge nodes on change.
@@ -134,6 +142,10 @@ Veil.Api.Internal.EdgeConfigEndpoints.Map(app);
 
 // Dashboard-facing proxy to the analytics worker's live AI incident feed.
 Veil.Api.Internal.IntelligenceEndpoints.Map(app);
+
+// Tyto RPC endpoints — AI rule application (ApplyAiRuleHandler). Behind the
+// default auth policy, so callers must present a valid API key.
+app.MapTytoRpcEndpoints();
 
 // Liveness vs readiness — both bypass the fallback auth policy so probes
 // work without credentials.
