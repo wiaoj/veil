@@ -71,18 +71,13 @@ public sealed class AnalyticsModule : IModule {
                 services.AddSingleton<IRuleApplier, LoggingRuleApplier>();
             }
 
-            // Alerting (Phase 11.3): incident → webhook + SIEM mirror. Active only
-            // when a sink is configured, else a no-op.
-            bool siemConfigured = intelligence.MirrorIncidentsToSiem
-                && !string.IsNullOrWhiteSpace(configuration.GetSection(SiemOptions.SectionName)[nameof(SiemOptions.Endpoint)]);
-            if(!string.IsNullOrWhiteSpace(intelligence.WebhookUrl) || siemConfigured) {
-                services.AddHttpClient(WebhookSiemAlerter.HttpClientName,
-                    client => client.Timeout = TimeSpan.FromSeconds(10));
-                services.AddSingleton<IIncidentAlerter, WebhookSiemAlerter>();
-            }
-            else {
-                services.AddSingleton<IIncidentAlerter, NullIncidentAlerter>();
-            }
+            // Alerting (Phase 12 Slice 3): the analysis loop publishes an
+            // IncidentRaised event on the bus; the webhook + SIEM sinks subscribe
+            // as independent handlers (WebhookAlertHandler / SiemAlertHandler,
+            // wired on the worker's Tyto endpoint). Each no-ops when unconfigured,
+            // so the shared HTTP client is all that's needed here.
+            services.AddHttpClient(WebhookAlertHandler.HttpClientName,
+                client => client.Timeout = TimeSpan.FromSeconds(10));
 
             services.AddHostedService<TrafficAnalysisService>();
         }

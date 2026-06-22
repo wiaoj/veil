@@ -15,7 +15,7 @@ public sealed class TrafficAnalysisService(
     ITrafficAnalyzer analyzer,
     IAnalystClient analyst,
     IRuleApplier ruleApplier,
-    IIncidentAlerter alerter,
+    Tyto.IBus bus,
     IncidentStore store,
     TimeProvider timeProvider,
     IOptions<IntelligenceOptions> options,
@@ -51,7 +51,10 @@ public sealed class TrafficAnalysisService(
             incident.Verdict = await analyst.AnalyzeAsync(incident, cancellationToken);
             incident.Action = await DecideAndActAsync(incident, cancellationToken);
             store.Add(incident);
-            await alerter.AlertAsync(incident, cancellationToken);
+            // Fan out to the alerting sinks (webhook, SIEM) over the bus; each
+            // subscribes independently and best-effort, so a sink never blocks
+            // the loop. In-memory transport today (sinks live in this process).
+            await bus.PublishAsync(new IncidentRaised(incident), cancellationToken);
 
             logger.LogInformation(
                 "Anomaly in zone {Zone} (score {Score}): {Classification} — {Action}",

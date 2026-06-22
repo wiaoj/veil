@@ -8,6 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Tyto messaging (Phase 12 Slice 3): in-memory incident alert fan-out. -->
+    <PackageReference Include="Tyto" Version="0.0.1-alpha.91" />
+    <PackageReference Include="Tyto.Transports.InMemory" Version="0.0.1-alpha.91" />
     <!-- Tyto RPC server for the Phase 12 incident feed (RPC-over-HTTP). -->
     <PackageReference Include="Tyto.DependencyInjection" Version="0.0.1-alpha.91" />
     <PackageReference Include="Tyto.Rpc" Version="0.0.1-alpha.91" />

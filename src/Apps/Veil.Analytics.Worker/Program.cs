@@ -33,7 +33,23 @@ string controlPlaneRpcUrl =
     (intelligenceSection["ControlPlaneUrl"] ?? "http://localhost:5210").TrimEnd('/') + "/rpc";
 string? controlPlaneApiKey = intelligenceSection["ControlPlaneApiKey"];
 
-builder.AddTyto(tyto =>
+builder.AddTyto(tyto => {
+    // Messaging (Phase 12 Slice 3): the analysis loop publishes IncidentRaised;
+    // the webhook + SIEM sinks subscribe as independent handlers. In-memory
+    // transport — publisher and subscribers are co-located in this worker.
+    tyto.MessageDefinitions(define =>
+        define.Add<Veil.Analytics.Intelligence.IncidentRaised>("intelligence.incident-raised", 1));
+    tyto.Transports(transports => transports.AddInMemory("memory",
+        options => options.Bind("veil.intelligence.events", "veil.intelligence.alerts")));
+    tyto.Endpoints(endpoints =>
+        endpoints.Add("INTELLIGENCE", endpoint => {
+            endpoint.ListenOn("memory", "veil.intelligence.alerts");
+            endpoint.Routing.Publish<Veil.Analytics.Intelligence.IncidentRaised>()
+                .To("memory", "veil.intelligence.events");
+            endpoint.AddHandler<Veil.Analytics.Intelligence.WebhookAlertHandler>();
+            endpoint.AddHandler<Veil.Analytics.Intelligence.SiemAlertHandler>();
+        }));
+
     tyto.AddRpc(rpc => {
         rpc.AddServer(server => {
             server.RegisterHandlersFromAssemblyContaining<GetIncidentsHandler>();
@@ -46,7 +62,8 @@ builder.AddTyto(tyto =>
                 http.ConnectTo("control-plane", new Uri(controlPlaneRpcUrl))
                     .Handles<Veil.Analytics.Intelligence.ApplyAiRuleRequest>();
             }));
-    }));
+    });
+});
 
 // OpenTelemetry tracing + metrics (opt-in via OTEL_EXPORTER_OTLP_ENDPOINT).
 builder.Services.AddVeilTelemetry(builder.Configuration, "veil-analytics");

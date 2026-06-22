@@ -11,6 +11,8 @@
     <PackageReference Include="Microsoft.ML.TimeSeries" Version="4.0.2" />
     <!-- Tyto RPC contract surface (IRpcRequest) for the Phase 12 incident feed. -->
     <PackageReference Include="Tyto.Rpc.Abstractions" Version="0.0.1-alpha.91" />
+    <!-- Tyto messaging (IBus/IEvent/[Message]) for Phase 12 incident alerting. -->
+    <PackageReference Include="Tyto.Abstractions" Version="0.0.1-alpha.91" />
   </ItemGroup>
 
   <ItemGroup>
