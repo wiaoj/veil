@@ -3,7 +3,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Text.Json.Serialization;
 using Tyto;
 using Tyto.DependencyInjection;
+using Tyto.Rpc;
+using Tyto.Rpc.Client;
+using Tyto.Rpc.Http;
 using Veil.Analytics;
+using Veil.Analytics.Intelligence;
 using Veil.Api.ConfigSync;
 using Veil.Auth;
 using Veil.Certificates;
@@ -74,6 +78,17 @@ builder.AddTyto(tyto => {
             endpoint.AddHandler<CertificateRevokedHandler>();
         });
     });
+
+    // Tyto RPC client (Phase 12): the dashboard incident feed now calls the
+    // analytics worker over RPC-over-HTTP instead of a bespoke HttpClient proxy.
+    string workerRpcUrl =
+        (builder.Configuration.GetSection("Intelligence")["WorkerUrl"] ?? "http://localhost:5001")
+            .TrimEnd('/') + "/rpc";
+    tyto.AddRpc(rpc =>
+        rpc.AddClient(client =>
+            client.UseHttp(http =>
+                http.ConnectTo("intelligence", new Uri(workerRpcUrl))
+                    .Handles<GetIncidentsRequest>())));
 });
 
 // Config sync: pushes signed zone snapshots to edge nodes on change.
@@ -97,10 +112,6 @@ builder.Services.Configure<ConfigSyncOptions>(
 builder.Services.AddHttpClient(ConfigSyncService.HttpClientName,
     client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHostedService<ConfigSyncService>();
-
-// HTTP client for the intelligence-incidents proxy → analytics worker.
-builder.Services.AddHttpClient(Veil.Api.Internal.IntelligenceEndpoints.HttpClientName,
-    client => client.Timeout = TimeSpan.FromSeconds(5));
 
 // ACME: provisions/renews certificates, publishing HTTP-01 challenges to
 // edge nodes. Idles unless Certificates:AcmeDirectoryUrl + EncryptionKey set.

@@ -17,6 +17,10 @@
     <PackageReference Include="Tyto" Version="0.0.1-alpha.91" />
     <PackageReference Include="Tyto.DependencyInjection" Version="0.0.1-alpha.91" />
     <PackageReference Include="Tyto.Transports.InMemory" Version="0.0.1-alpha.91" />
+    <!-- Tyto RPC client (Phase 12): calls the analytics worker's incident feed. -->
+    <PackageReference Include="Tyto.Rpc" Version="0.0.1-alpha.91" />
+    <PackageReference Include="Tyto.Rpc.Client" Version="0.0.1-alpha.91" />
+    <PackageReference Include="Tyto.Rpc.Http" Version="0.0.1-alpha.91" />
   </ItemGroup>
 
   <ItemGroup>
