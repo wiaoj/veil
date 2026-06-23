@@ -131,3 +131,82 @@ pub fn error_strings(lang: Lang) -> ErrorStrings {
         },
     }
 }
+
+/// Localised title + detail for a gateway/origin failure page, keyed by the
+/// classified failure reason (rendered into `templates/error.html`).
+pub struct GatewayStrings {
+    pub title: &'static str,
+    pub detail: &'static str,
+}
+
+pub fn gateway_strings(lang: Lang, reason: crate::response::GatewayReason) -> GatewayStrings {
+    use crate::response::GatewayReason as R;
+    match (lang, reason) {
+        // ── Turkish ──────────────────────────────────────────────────
+        (Lang::Tr, R::WebServerDown) => GatewayStrings {
+            title: "Web Sunucusu Kapalı",
+            detail: "Origin sunucu bağlantıyı reddetti. Sunucu kapalı veya erişilemez durumda olabilir.",
+        },
+        (Lang::Tr, R::OriginUnreachable) => GatewayStrings {
+            title: "Origin'e Ulaşılamıyor",
+            detail: "Veil origin sunucuyu çözümleyemedi veya ona ulaşamadı.",
+        },
+        (Lang::Tr, R::OriginTlsHandshake) => GatewayStrings {
+            title: "SSL El Sıkışması Başarısız",
+            detail: "Origin sunucu ile güvenli (TLS) bağlantı kurulamadı.",
+        },
+        (Lang::Tr, R::OriginCertInvalid) => GatewayStrings {
+            title: "Geçersiz Origin Sertifikası",
+            detail: "Origin sunucunun SSL sertifikası doğrulanamadı.",
+        },
+        (Lang::Tr, R::OriginTimeout) => GatewayStrings {
+            title: "Origin Zaman Aşımına Uğradı",
+            detail: "Origin sunucu zamanında yanıt vermedi.",
+        },
+        (Lang::Tr, R::BadResponse) => GatewayStrings {
+            title: "Geçersiz Origin Yanıtı",
+            detail: "Origin sunucu geçersiz veya eksik bir yanıt döndürdü.",
+        },
+        (Lang::Tr, R::BadGateway) => GatewayStrings {
+            title: "Hatalı Ağ Geçidi",
+            detail: "Veil origin sunucudan geçerli bir yanıt alamadı.",
+        },
+        (Lang::Tr, R::NotReady) => GatewayStrings {
+            title: "Hizmet Kullanılamıyor",
+            detail: "Bu edge düğümü henüz trafik sunacak şekilde yapılandırılmadı.",
+        },
+        // ── English ──────────────────────────────────────────────────
+        (Lang::En, R::WebServerDown) => GatewayStrings {
+            title: "Web Server Is Down",
+            detail: "The origin server refused the connection. It may be down or unreachable.",
+        },
+        (Lang::En, R::OriginUnreachable) => GatewayStrings {
+            title: "Origin Unreachable",
+            detail: "Veil could not resolve or reach the origin server.",
+        },
+        (Lang::En, R::OriginTlsHandshake) => GatewayStrings {
+            title: "SSL Handshake Failed",
+            detail: "The secure (TLS) connection to the origin server could not be established.",
+        },
+        (Lang::En, R::OriginCertInvalid) => GatewayStrings {
+            title: "Invalid Origin Certificate",
+            detail: "The origin server's SSL certificate could not be validated.",
+        },
+        (Lang::En, R::OriginTimeout) => GatewayStrings {
+            title: "Origin Timed Out",
+            detail: "The origin server took too long to respond.",
+        },
+        (Lang::En, R::BadResponse) => GatewayStrings {
+            title: "Invalid Origin Response",
+            detail: "The origin server returned an invalid or incomplete response.",
+        },
+        (Lang::En, R::BadGateway) => GatewayStrings {
+            title: "Bad Gateway",
+            detail: "Veil did not receive a valid response from the origin server.",
+        },
+        (Lang::En, R::NotReady) => GatewayStrings {
+            title: "Service Unavailable",
+            detail: "This edge node is not yet configured to serve traffic.",
+        },
+    }
+}

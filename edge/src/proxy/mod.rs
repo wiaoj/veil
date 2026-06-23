@@ -31,7 +31,9 @@ use crate::config::Config;
 use crate::pipeline::rate_limit::{InMemoryLimiter, RateLimiter};
 use crate::pipeline::router::{BufferedClient, UpstreamClient};
 use crate::pipeline::{inspector, router, rules, signatures, Verdict};
-use crate::response::{forbidden, json_response, rate_limited, text, ProxyBody};
+use crate::response::{
+    forbidden, gateway_error, json_response, rate_limited, text, GatewayReason, ProxyBody,
+};
 
 /// Reserved path where the control plane pushes config updates at runtime.
 pub const CONFIG_PUSH_PATH: &str = "/_veil/internal/config";
@@ -66,6 +68,11 @@ pub struct AppState {
     pub client: UpstreamClient,
     /// Client for forwarding requests whose body was buffered for inspection.
     pub buffered_client: BufferedClient,
+    /// Deadline for receiving upstream response headers. On elapse the request
+    /// fails with a `504` gateway-timeout page. The connect timeout is baked
+    /// into the connector separately. Configurable via
+    /// `VEIL_UPSTREAM_TIMEOUT_SECS` (default 30).
+    pub upstream_timeout: std::time::Duration,
     pub challenge: ChallengeEngine,
     /// Shared secret authenticating control-plane pushes. `None` disables
     /// the push receiver entirely (local-file mode).
@@ -135,12 +142,29 @@ impl AppState {
 
         // Upstream connector that speaks both plain http and TLS (https),
         // chosen per-request from the upstream URI scheme. webpki roots verify
-        // the upstream certificate chain.
+        // the upstream certificate chain. A connect timeout bounds the TCP
+        // handshake so an unroutable origin fails fast as a 502 rather than
+        // hanging the request.
+        let connect_timeout_secs = std::env::var("VEIL_UPSTREAM_CONNECT_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(10);
+        let mut http_connector = hyper_util::client::legacy::connect::HttpConnector::new();
+        http_connector.set_connect_timeout(Some(std::time::Duration::from_secs(connect_timeout_secs)));
+        // Required when wrapping a custom HttpConnector for https URIs.
+        http_connector.enforce_http(false);
         let upstream_https = hyper_rustls::HttpsConnectorBuilder::new()
             .with_webpki_roots()
             .https_or_http()
             .enable_http1()
-            .build();
+            .wrap_connector(http_connector);
+
+        let upstream_timeout = std::time::Duration::from_secs(
+            std::env::var("VEIL_UPSTREAM_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(30),
+        );
 
         Self {
             config: ConfigStore::new(config),
@@ -148,6 +172,7 @@ impl AppState {
             rule_limiter: RateLimiter::in_memory(),
             client: Client::builder(TokioExecutor::new()).build(upstream_https.clone()),
             buffered_client: Client::builder(TokioExecutor::new()).build(upstream_https),
+            upstream_timeout,
             challenge: ChallengeEngine::new(cookie_name, cookie_ttl),
             node_token,
             push_hmac_key,
@@ -349,19 +374,26 @@ pub async fn handle(
     }
 
     let Some(zone) = config.resolve_zone(&ctx.host) else {
-        let response = text(StatusCode::MISDIRECTED_REQUEST, "421 unknown host\n");
+        // No zone with zero zones loaded means the edge isn't configured yet
+        // (branded 503); a known-empty host with other zones present is a
+        // genuinely unknown host (421).
+        let (response, verdict): (_, &'static str) = if config.zones.is_empty() {
+            (gateway_error(GatewayReason::NotReady, ctx.wants_html(), ctx.lang()), "not_ready")
+        } else {
+            (text(StatusCode::MISDIRECTED_REQUEST, "421 unknown host\n"), "no_zone")
+        };
         info!(
             zone = "-",
             method = %ctx.method,
             path = %ctx.path,
             status = response.status().as_u16(),
-            verdict = "no_zone",
+            verdict,
             client_ip = %ctx.client_ip,
             total_ms = started.elapsed().as_millis() as u64,
             "request"
         );
-        state.metrics.record_request("no_zone", started.elapsed().as_secs_f64());
-        record_request(&state, &ctx, "-", "no_zone", None, response.status().as_u16(), ts_ms, started);
+        state.metrics.record_request(verdict, started.elapsed().as_secs_f64());
+        record_request(&state, &ctx, "-", verdict, None, response.status().as_u16(), ts_ms, started);
         return response;
     };
 
@@ -833,19 +865,30 @@ async fn dispatch_forward(
     upstream: &str,
     state: &AppState,
 ) -> Response<ProxyBody> {
-    let result = match source {
-        ForwardSource::Stream(req) => router::forward(req, ctx, upstream, &state.client).await,
-        ForwardSource::Buffered(parts, bytes) => {
-            let req = Request::from_parts(parts, Full::new(bytes));
-            router::forward(req, ctx, upstream, &state.buffered_client).await
+    let forward = async {
+        match source {
+            ForwardSource::Stream(req) => router::forward(req, ctx, upstream, &state.client).await,
+            ForwardSource::Buffered(parts, bytes) => {
+                let req = Request::from_parts(parts, Full::new(bytes));
+                router::forward(req, ctx, upstream, &state.buffered_client).await
+            }
         }
     };
-    match result {
-        Ok(response) => response,
-        Err(err) => {
-            warn!(upstream, error = %err, "upstream request failed");
+
+    // Bound time-to-response-headers; body streaming after the head is not
+    // capped here (large downloads must not be killed mid-stream).
+    match tokio::time::timeout(state.upstream_timeout, forward).await {
+        Ok(Ok(response)) => response,
+        Ok(Err(err)) => {
+            let reason = crate::response::classify_upstream_error(err.as_ref());
+            warn!(upstream, error = %err, reason = reason.ref_code(), "upstream request failed");
             state.metrics.record_upstream_error();
-            text(StatusCode::BAD_GATEWAY, "502 bad gateway\n")
+            gateway_error(reason, ctx.wants_html(), ctx.lang())
+        }
+        Err(_elapsed) => {
+            warn!(upstream, timeout_secs = state.upstream_timeout.as_secs(), "upstream timed out");
+            state.metrics.record_upstream_error();
+            gateway_error(GatewayReason::OriginTimeout, ctx.wants_html(), ctx.lang())
         }
     }
 }

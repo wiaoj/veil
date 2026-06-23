@@ -111,6 +111,26 @@ async fn proxies_allowed_requests_to_upstream() {
 }
 
 #[tokio::test]
+async fn upstream_down_returns_branded_bad_gateway() {
+    // Bind then immediately drop the listener to get an address that refuses
+    // connections — simulating a downed origin.
+    let dead = {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        listener.local_addr().unwrap()
+    };
+    let proxy = spawn_proxy(dead).await;
+    let client = client();
+
+    let response = get(&client, proxy, "/hello").await;
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        response.headers().get("x-veil-error").unwrap(),
+        "web_server_down",
+        "connection refused must classify as web_server_down",
+    );
+}
+
+#[tokio::test]
 async fn blocks_matching_path() {
     let upstream = spawn_upstream().await;
     let proxy = spawn_proxy(upstream).await;
