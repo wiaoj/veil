@@ -222,7 +222,7 @@ veil/
 │
 ├── docker-compose.yml           # Dev infra (PostgreSQL, Redis, ClickHouse)
 ├── docker-compose.prod.yml      # Production stack (resource limits, healthchecks)
-└── Veil.sln
+└── Veil.slnx
 ```
 
 ---

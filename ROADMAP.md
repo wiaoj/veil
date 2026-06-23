@@ -329,17 +329,30 @@
 - [x] "Intelligence" view — live anomaly feed (`/intelligence` route, "Yapay zeka") reading `GET /v1/intelligence/incidents` (Veil.Api proxy → worker), auto-refreshing every 10s. Per-incident detail + suggested rule shown. *(One-click manual apply still pending — auto-apply already lands rules server-side.)*
 ## 12. Inter-service communication over Tyto
 
-Today the control plane ⇄ worker / module ⇄ module calls are a mix of
-in-process Tyto integration events (config sync) and direct HTTP
-(`IntelligenceEndpoints` proxy → worker `/intelligence/incidents`,
-`HttpRuleApplier` → Veil.Api, edge ingest). Consolidate **all** service-to-service
-communication onto Tyto:
+Service-to-service calls between the .NET hosts are consolidated onto Tyto, so
+the only remaining raw HTTP is at boundaries that *cannot* speak Tyto (the Rust
+edge) or are external (the Anthropic API).
 
-- [ ] **Async (`tyto.messaging`)** — fire-and-forget / event-driven flows: config
-  push signals, incident alerts, ingest hand-off, audit fan-out. Already partly
-  here via integration events; extend to the worker boundary.
-- [ ] **Sync (`tyto.rpc`)** — request/response flows that today go over raw HTTP:
-  dashboard → worker incident feed, intelligence rule application → Veil.Api,
-  edge config pull. Replace bespoke HTTP clients with typed Tyto RPC contracts.
-- [ ] Pick transport per call site (in-memory vs broker) without changing call
-  sites; keep contracts in the `*.Contracts` projects.
+- [x] **Sync (`tyto.rpc` over HTTP)** — the two bespoke control-plane ⇄ worker
+  HTTP flows now run as typed RPC contracts (no broker needed):
+  - Dashboard incident feed: `GetIncidentsRequest` → worker `GetIncidentsHandler`
+    (`IntelligenceEndpoints` calls it via `IRpcClient`, degrades to empty on
+    failure). The worker's plain `GET /intelligence/incidents` is kept only for
+    direct debugging.
+  - AI rule application: `ApplyAiRuleRequest` → Veil.Api `ApplyAiRuleHandler`
+    (`RpcRuleApplier`, X-Api-Key auth). The server resolves the zone + creates
+    the rule in-process, replacing the worker's old two-call REST flow.
+- [x] **Async (`tyto.messaging`)** — incident alerting fans out via the
+  `IncidentRaised` event over the in-memory transport to `WebhookAlertHandler` +
+  `SiemAlertHandler`. Config-sync change signals already ride Wiaoj.Ddd.Tyto
+  integration events. Both publishers and handlers are co-located per process,
+  so the in-memory transport is correct here — no broker required.
+- [x] Contracts live in the intelligence layer / `*.Contracts` projects;
+  transport is chosen at registration (in-memory vs HTTP) without touching call
+  sites.
+- [ ] **Deferred — broker-backed cross-process messaging** (`Tyto.Transports.RabbitMq`):
+  only needed if alert handlers or audit fan-out are split into a separate
+  process from their publisher. Not required by the current topology.
+
+> Out of scope for Tyto by design: edge ingest + edge config pull (Rust → .NET,
+> stay HTTP) and the Anthropic Messages API (external).
