@@ -253,17 +253,21 @@ See [`deploy/k8s/README.md`](deploy/k8s/README.md) for cluster requirements, nod
 
 ## Performance
 
-Veil's edge node is designed to be resource-efficient and predictable under load:
+The numbers below are **design targets**, not certified benchmarks — except the
+throughput baseline, which is the only figure measured so far.
 
-| Metric | Target |
-|---|---|
-| Throughput | 100,000+ req/s per node |
-| P99 added latency | < 1ms (allow path, warm cache) |
-| Memory per node | < 256MB under full load |
-| Config reload time | < 50ms (zero dropped requests) |
-| PoW challenge solve time | ~200ms (modern browser, difficulty 20) |
+| Metric | Design target | Status |
+|---|---|---|
+| Throughput | 100,000+ req/s per node | **Measured** — dispatch-path baseline ~104k req/s on a dev box (loopback). See [`edge-README.md`](edge-README.md) |
+| P99 added latency | < 1ms (allow path, warm cache) | Target — not formally measured |
+| Memory per node | < 256MB under full load | Target — not formally measured |
+| Config reload time | < 50ms (zero dropped requests) | Target — not formally measured |
+| PoW challenge solve time | ~200ms (modern browser, difficulty 20) | Target — not formally measured |
 
-Benchmarks are run against a single edge node on commodity hardware (4 vCPU, 8GB RAM). See [`edge/README.md`](edge/README.md) for benchmark methodology.
+The throughput baseline comes from the dependency-free `cargo run --example
+loadtest` harness; reproduce it and read the methodology in
+[`edge-README.md`](edge-README.md). The other rows are goals the architecture is
+built toward, pending a real load-test rig.
 
 ---
 
