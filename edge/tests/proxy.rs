@@ -110,6 +110,80 @@ async fn proxies_allowed_requests_to_upstream() {
     assert_eq!(&body[..], b"upstream-ok");
 }
 
+/// Upstream that sleeps past any sane test timeout before responding.
+async fn slow_upstream_handler(_req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    Ok(Response::new(Full::new(Bytes::from("too-late"))))
+}
+
+async fn spawn_slow_upstream() -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            tokio::spawn(async move {
+                let _ = auto::Builder::new(TokioExecutor::new())
+                    .serve_connection(TokioIo::new(stream), service_fn(slow_upstream_handler))
+                    .await;
+            });
+        }
+    });
+    addr
+}
+
+/// Proxy with a sub-second upstream response timeout, for the 504 path.
+async fn spawn_proxy_with_short_timeout(upstream: SocketAddr) -> SocketAddr {
+    let config = Config::from_json(&format!(
+        r#"{{"zones": [{{"name": "test", "hosts": ["*"], "upstream": "http://{upstream}", "rules": []}}]}}"#
+    ))
+    .unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let mut state = AppState::new(config);
+    state.upstream_timeout = std::time::Duration::from_millis(200);
+    tokio::spawn(proxy::serve(listener, Arc::new(state)));
+    addr
+}
+
+/// Proxy with zero zones loaded — the "edge not configured yet" case.
+async fn spawn_proxy_no_zones() -> SocketAddr {
+    let config = Config::from_json(r#"{"zones": []}"#).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(proxy::serve(listener, Arc::new(AppState::new(config))));
+    addr
+}
+
+#[tokio::test]
+async fn slow_upstream_returns_branded_gateway_timeout() {
+    let upstream = spawn_slow_upstream().await;
+    let proxy = spawn_proxy_with_short_timeout(upstream).await;
+    let client = client();
+
+    let response = get(&client, proxy, "/hello").await;
+    assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    assert_eq!(
+        response.headers().get("x-veil-error").unwrap(),
+        "origin_timeout",
+        "a slow origin must time out as origin_timeout (504)",
+    );
+}
+
+#[tokio::test]
+async fn no_zones_returns_branded_service_unavailable() {
+    let proxy = spawn_proxy_no_zones().await;
+    let client = client();
+
+    let response = get(&client, proxy, "/anything").await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response.headers().get("x-veil-error").unwrap(),
+        "edge_not_ready",
+        "a node with no zones must serve a branded 503",
+    );
+}
+
 #[tokio::test]
 async fn upstream_down_returns_branded_bad_gateway() {
     // Bind then immediately drop the listener to get an address that refuses
