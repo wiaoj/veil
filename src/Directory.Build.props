@@ -1,5 +1,7 @@
 <Project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="Directory.Build.xsd">
-	<ItemGroup>
+	<!-- The Aspire AppHost (orchestration only) doesn't reference the Wiaoj
+	     packages these global usings need, so skip them there. -->
+	<ItemGroup Condition="'$(IsAspireHost)' != 'true'">
 		<Using Include="Wiaoj.Ddd" />
 		<Using Include="Wiaoj.Ddd.DomainEvents" />
 		<Using Include="Wiaoj.Results" />

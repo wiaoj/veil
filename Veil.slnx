@@ -23,6 +23,7 @@
   <Folder Name="/src/Apps/">
     <Project Path="src/Apps/Veil.Analytics.Worker/Veil.Analytics.Worker.csproj" />
     <Project Path="src/Apps/Veil.Api/Veil.Api.csproj" />
+    <Project Path="src/Apps/Veil.AppHost/Veil.AppHost.csproj" />
     <Project Path="src/Apps/Veil.ConfigSync/Veil.ConfigSync.csproj" />
     <Project Path="src/Apps/Veil.DbMigrator/Veil.DbMigrator.csproj" />
   </Folder>
