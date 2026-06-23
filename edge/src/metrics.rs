@@ -19,6 +19,21 @@ const VERDICTS: [&str; 7] = [
     "other",
 ];
 
+/// Upstream failure reasons mirrored from `response::GatewayReason::ref_code`.
+/// Order is the array index — keep in sync with [`upstream_reason_index`].
+/// (`edge_not_ready` is a request verdict, not an upstream error, so it is not
+/// here.) Unrecognised reasons fall into the trailing `other`.
+const UPSTREAM_REASONS: [&str; 8] = [
+    "web_server_down",
+    "origin_unreachable",
+    "origin_ssl_handshake",
+    "origin_ssl_invalid",
+    "origin_timeout",
+    "origin_bad_response",
+    "bad_gateway",
+    "other",
+];
+
 /// Upper bounds (seconds) for the request-duration histogram. The implicit
 /// `+Inf` bucket is `request_count`.
 const LATENCY_BUCKETS: [f64; 11] = [
@@ -35,8 +50,8 @@ pub struct Metrics {
     latency_count: AtomicU64,
     /// Sum of observed durations, in microseconds (integer to stay atomic).
     latency_sum_micros: AtomicU64,
-    /// Upstream forward failures (502s emitted by the proxy).
-    upstream_errors: AtomicU64,
+    /// Upstream forward failures, indexed like [`UPSTREAM_REASONS`].
+    upstream_errors: [AtomicU64; UPSTREAM_REASONS.len()],
 }
 
 impl Metrics {
@@ -58,8 +73,8 @@ impl Metrics {
         }
     }
 
-    pub fn record_upstream_error(&self) {
-        self.upstream_errors.fetch_add(1, Ordering::Relaxed);
+    pub fn record_upstream_error(&self, reason: &str) {
+        self.upstream_errors[upstream_reason_index(reason)].fetch_add(1, Ordering::Relaxed);
     }
 
     /// Renders the Prometheus text exposition format (v0.0.4).
@@ -89,12 +104,14 @@ impl Metrics {
         out.push_str(&format!("veil_request_duration_seconds_sum {sum_secs}\n"));
         out.push_str(&format!("veil_request_duration_seconds_count {total}\n"));
 
-        out.push_str("# HELP veil_upstream_errors_total Upstream forward failures (502).\n");
+        out.push_str("# HELP veil_upstream_errors_total Upstream forward failures, by reason.\n");
         out.push_str("# TYPE veil_upstream_errors_total counter\n");
-        out.push_str(&format!(
-            "veil_upstream_errors_total {}\n",
-            self.upstream_errors.load(Ordering::Relaxed)
-        ));
+        for (i, reason) in UPSTREAM_REASONS.iter().enumerate() {
+            let value = self.upstream_errors[i].load(Ordering::Relaxed);
+            out.push_str(&format!(
+                "veil_upstream_errors_total{{reason=\"{reason}\"}} {value}\n"
+            ));
+        }
 
         out
     }
@@ -102,6 +119,13 @@ impl Metrics {
 
 fn verdict_index(verdict: &str) -> usize {
     VERDICTS.iter().position(|&v| v == verdict).unwrap_or(VERDICTS.len() - 1)
+}
+
+fn upstream_reason_index(reason: &str) -> usize {
+    UPSTREAM_REASONS
+        .iter()
+        .position(|&r| r == reason)
+        .unwrap_or(UPSTREAM_REASONS.len() - 1)
 }
 
 #[cfg(test)]
@@ -126,6 +150,21 @@ mod tests {
         let m = Metrics::new();
         m.record_request("surprise", 0.01);
         assert!(m.render().contains("veil_requests_total{verdict=\"other\"} 1"));
+    }
+
+    #[test]
+    fn upstream_errors_counted_by_reason() {
+        let m = Metrics::new();
+        m.record_upstream_error("web_server_down");
+        m.record_upstream_error("web_server_down");
+        m.record_upstream_error("origin_timeout");
+        m.record_upstream_error("totally_unknown"); // → other
+
+        let out = m.render();
+        assert!(out.contains("veil_upstream_errors_total{reason=\"web_server_down\"} 2"));
+        assert!(out.contains("veil_upstream_errors_total{reason=\"origin_timeout\"} 1"));
+        assert!(out.contains("veil_upstream_errors_total{reason=\"other\"} 1"));
+        assert!(out.contains("veil_upstream_errors_total{reason=\"bad_gateway\"} 0"));
     }
 
     #[test]

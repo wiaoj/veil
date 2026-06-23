@@ -882,12 +882,12 @@ async fn dispatch_forward(
         Ok(Err(err)) => {
             let reason = crate::response::classify_upstream_error(err.as_ref());
             warn!(upstream, error = %err, reason = reason.ref_code(), "upstream request failed");
-            state.metrics.record_upstream_error();
+            state.metrics.record_upstream_error(reason.ref_code());
             gateway_error(reason, ctx.wants_html(), ctx.lang())
         }
         Err(_elapsed) => {
             warn!(upstream, timeout_secs = state.upstream_timeout.as_secs(), "upstream timed out");
-            state.metrics.record_upstream_error();
+            state.metrics.record_upstream_error(GatewayReason::OriginTimeout.ref_code());
             gateway_error(GatewayReason::OriginTimeout, ctx.wants_html(), ctx.lang())
         }
     }
