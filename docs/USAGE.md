@@ -54,6 +54,19 @@ Prereqs: .NET 10 SDK, Rust (stable), bun, and PostgreSQL + Redis + ClickHouse
 (via `docker compose` or local containers — the dev infra runs on Postgres
 :5432, ClickHouse :8123, Redis :6379).
 
+### Fastest path: .NET Aspire
+
+`Veil.AppHost` starts the infra (Postgres, ClickHouse), applies migrations + seed
+(`Veil.DbMigrator`), and runs `Veil.Api` + `Veil.Analytics.Worker` wired for the
+Tyto bus/RPC — one command. Stop any hand-started `veil-*` containers first.
+
+```bash
+dotnet run --project src/Apps/Veil.AppHost
+# then run the edge node and dashboard (steps 5 and 4 below)
+```
+
+### Manual (run each piece by hand)
+
 ```bash
 # 1. Start infra (PostgreSQL, Redis, ClickHouse)
 docker compose up -d

@@ -33,7 +33,7 @@ Veil is a monorepo composed of three independently deployable layers:
 | Layer | Technology | Responsibility |
 |---|---|---|
 | **Edge** | Rust (Tokio + Hyper) | Data plane — proxying, filtering, challenging |
-| **Control Plane** | .NET 9 (ASP.NET Core) | Config management, auth, cert issuance, analytics |
+| **Control Plane** | .NET 10 (ASP.NET Core) | Config management, auth, cert issuance, analytics |
 | **Dashboard** | React + shadcn/ui + TanStack | Management UI |
 
 ```
@@ -45,7 +45,7 @@ veil/
 └── docs/           # Architecture docs and ADRs
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for the full system design, and each layer's own `README.md` for deep dives.
+See [`architecture.md`](architecture.md) for the full system design, [`docs/USAGE.md`](docs/USAGE.md) for the end-to-end operations guide, and [`control-plane-README.md`](control-plane-README.md) / [`edge-README.md`](edge-README.md) for per-layer deep dives.
 
 ---
 
@@ -79,7 +79,7 @@ Rules are compiled to an efficient decision tree on the edge node at config load
 When the rule engine determines a request is suspicious but not definitively malicious, it issues a **challenge** instead of blocking. Veil uses a two-tier challenge system:
 
 1. **WebAssembly Proof-of-Work (Tier 1)** — The browser receives a challenge page with a compiled WebAssembly solver built from Rust via `wasm-pack`. The solver runs in a Web Worker and completes in ~50ms at default difficulty — invisible to legitimate users. Bot frameworks either fail silently or reveal themselves through timing. The page is served in English and Turkish, with locale selected automatically via `Accept-Language`.
-2. **hCaptcha (Tier 2)** — Triggered when PoW is solved but the request's risk score remains elevated, or when Tier 1 is bypassed (e.g. JS disabled). Human users complete a CAPTCHA; automated clients are blocked.
+2. **Self-hosted behavioural challenge (Tier 2)** — Triggered when the risk score is elevated. The PoW page additionally collects coarse pointer/touch telemetry (event count, path length, straightness, timing jitter) and scores it server-side for human confidence (`edge/src/challenge/behavior.rs`), on top of an elevated, nonce-bound PoW. No third-party dependency, privacy-friendly, fully in-process. hCaptcha/Turnstile remain a deferred optional pluggable backend.
 
 Passing a challenge issues a signed, short-lived token that edge nodes verify on subsequent requests, avoiding repeated challenges for the same visitor.
 
@@ -98,12 +98,14 @@ The control plane maintains the authoritative configuration in PostgreSQL. When 
 - **MaxMind GeoIP2** — country and ASN lookups (MMDB)
 - **SHA-256** — PoW challenge generation and verification
 
-### Control Plane (.NET 9)
-- **ASP.NET Core** — REST API (`Veil.Api`)
-- **Entity Framework Core** — PostgreSQL persistence (per-module DbContext)
+### Control Plane (.NET 10)
+- **ASP.NET Core** — REST API (`Veil.Api`), minimal-API vertical slices
+- **.NET Aspire** — single-host dev orchestration (`Veil.AppHost`): infra + control plane + worker with one `dotnet run`
+- **Entity Framework Core** — PostgreSQL persistence (per-module DbContext); migrations applied via `Veil.DbMigrator`
 - **StackExchange.Redis** — rate limit counters, IP reputation, challenge tokens, config cache
-- **Acme.NET / Certes** — ACME protocol for automatic TLS certificate issuance
-- **MediatR** — CQRS / mediator pattern
+- **Tyto** — service-to-service messaging (in-process bus) + RPC (cross-process), see Phase 12
+- **ML.NET** — in-process anomaly/spike detection for the AI traffic-analysis layer (`Veil.Analytics.Intelligence`)
+- **Certes** — ACME v2 protocol for automatic TLS certificate issuance
 
 ### Dashboard (React)
 - **TanStack Router** — type-safe client-side routing
@@ -128,59 +130,46 @@ The control plane maintains the authoritative configuration in PostgreSQL. When 
 
 ### Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/)
-- [.NET 9 SDK](https://dotnet.microsoft.com/download)
-- [Rust toolchain](https://rustup.rs/) (stable)
-- [Node.js 20+](https://nodejs.org/)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download) (includes the Aspire workload)
+- A container runtime — [Docker](https://docs.docker.com/get-docker/) or [Podman](https://podman.io/) (the dev infra runs on PostgreSQL + ClickHouse; Redis is optional in dev)
+- [Rust toolchain](https://rustup.rs/) (stable) — only needed to run an edge node
+- [Bun](https://bun.sh/) — only needed to run the dashboard
 
-### Quickstart (Docker Compose)
+### Quickstart (.NET Aspire — recommended)
+
+`Veil.AppHost` brings up the dev infrastructure (PostgreSQL, ClickHouse), applies
+EF migrations + seed (`Veil.DbMigrator`), and starts the control plane
+(`Veil.Api`) and analytics worker (`Veil.Analytics.Worker`) — correctly wired for
+both the in-process Tyto bus and cross-process Tyto RPC — with a single command:
 
 ```bash
 git clone https://github.com/your-org/veil.git
 cd veil
 
-# Copy environment template
-cp deploy/docker/.env.example deploy/docker/.env
-
-# Start all services (PostgreSQL, Redis, ClickHouse, control plane, edge, dashboard)
-docker compose -f deploy/docker/docker-compose.yml up -d
-
-# Run database migrations
-dotnet ef database update --project src/02.Infrastructure/Veil.Infrastructure
-
-# Dashboard is available at:
-open http://localhost:5173
-
-# Edge node is listening at:
-# HTTP  → :80
-# HTTPS → :443
+# Stop any hand-started podman/docker veil-* containers first — Aspire owns the
+# container lifecycle and will collide with them.
+dotnet run --project src/Apps/Veil.AppHost
 ```
 
-Default credentials (change immediately):
-- Dashboard: `admin@veil.local` / `changeme`
-- API key: printed to control plane logs on first start
+The Aspire dashboard prints the dynamically assigned URLs for the API and worker.
+Default dev admin (from `appsettings.Development.json`): `admin@veil.local` /
+`admin-dev-password`.
 
-### Development Setup
-
-For local development without Docker:
+Then run the edge node and dashboard separately:
 
 ```bash
-# 1. Start infrastructure only
-docker compose -f deploy/docker/docker-compose.yml up postgres redis clickhouse -d
+# Edge node (local-file config mode — reads veil.json)
+cd edge && cargo run
 
-# 2. Run control plane
-cd src/03.Apps/Veil.Api
-dotnet run
-
-# 3. Run edge node
-cd edge
-VEIL_CONTROL_PLANE_URL=http://localhost:5000 cargo run
-
-# 4. Run dashboard
-cd dashboard
-npm install
-npm run dev
+# Dashboard (proxies /v1 → control plane)
+cd dashboard && bun install && bun run dev      # http://localhost:3000
 ```
+
+### Manual setup (without Aspire)
+
+If you'd rather start the pieces by hand — infra via `docker compose up -d` (or
+podman), EF migrations per context, then `dotnet run` for each service — see the
+step-by-step flow in **[docs/USAGE.md](docs/USAGE.md)**.
 
 ---
 
@@ -192,7 +181,7 @@ veil/
 │   ├── src/
 │   │   ├── proxy/               # Core TCP/HTTP proxy
 │   │   ├── pipeline/            # Request inspection pipeline
-│   │   ├── challenge/           # PoW (WASM) and hCaptcha engine
+│   │   ├── challenge/           # PoW (WASM) + behavioural Tier-2 engine
 │   │   └── config/              # Config sync client
 │   ├── Cargo.toml
 │   └── README.md
@@ -200,14 +189,18 @@ veil/
 ├── src/                         # .NET control plane
 │   ├── Veil.Zones/              # Zone and rule management
 │   ├── Veil.Certificates/       # TLS certificate lifecycle (ACME)
-│   ├── Veil.Analytics/          # Request log queries
+│   ├── Veil.Analytics/          # Request log queries + AI intelligence
+│   │                            #   (namespace Veil.Analytics.Intelligence)
 │   ├── Veil.Auth/               # Users, API keys, JWT
 │   ├── Veil.EdgeNodes/          # Edge node registry and config push
 │   ├── Veil.Shared/             # Cross-cutting utilities
+│   ├── *.Contracts/             # Tyto RPC/messaging contracts (Zones, EdgeNodes)
 │   └── Apps/
-│       ├── Veil.Api/            # REST API — zones, rules, certs, auth
-│       ├── Veil.ConfigSync/     # Worker — pushes config to edge nodes
-│       └── Veil.Analytics/      # Worker — ingests edge request logs
+│       ├── Veil.AppHost/        # .NET Aspire single-host dev orchestration
+│       ├── Veil.Api/            # REST API — zones, rules, certs, auth, analytics
+│       ├── Veil.Analytics.Worker/ # Worker — ingests edge logs + AI analysis
+│       ├── Veil.ConfigSync/     # Config push to edge nodes (hosted in Veil.Api)
+│       └── Veil.DbMigrator/     # Applies EF migrations + seed on startup
 │
 ├── dashboard/                   # React management UI
 │   ├── src/
@@ -219,20 +212,16 @@ veil/
 │   │       └── challenge/
 │   └── README.md
 │
+├── architecture.md              # Full system design
 ├── docs/
-│   ├── architecture.md          # Full system design
-│   ├── challenge-engine.md      # PoW algorithm and token spec
-│   └── adr/                     # Architecture Decision Records
+│   └── USAGE.md                 # End-to-end operations guide
 │
 ├── deploy/
-│   ├── docker/
-│   │   ├── docker-compose.yml
-│   │   └── docker-compose.prod.yml
-│   └── k8s/
-│       ├── edge/
-│       ├── control-plane/
-│       └── dashboard/
+│   ├── docker/                  # Multi-stage Dockerfiles (edge, api, worker)
+│   └── k8s/                     # Kubernetes manifests + README
 │
+├── docker-compose.yml           # Dev infra (PostgreSQL, Redis, ClickHouse)
+├── docker-compose.prod.yml      # Production stack (resource limits, healthchecks)
 └── Veil.sln
 ```
 
@@ -245,10 +234,10 @@ veil/
 Suitable for development and small production deployments:
 
 ```bash
-docker compose -f deploy/docker/docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-See [`deploy/docker/README.md`](deploy/docker/README.md) for environment variables and scaling options.
+Copy [`.env.example`](.env.example) → `.env` (and [`edge/.env.example`](edge/.env.example)) and fill in real secrets first. Multi-stage Dockerfiles live in [`deploy/docker/`](deploy/docker/).
 
 ### Kubernetes (multi-node / edge cluster)
 
@@ -294,7 +283,8 @@ Benchmarks are run against a single edge node on commodity hardware (4 vCPU, 8GB
 - [x] IP reputation feed integration
 - [x] Managed WAF signature set (OWASP-CRS-style)
 - [x] Shadow mode, attack webhooks, SIEM log export
-- [ ] AI-assisted live traffic analysis (anomaly detection + attack summaries)
+- [x] AI-assisted live traffic analysis — ML.NET spike detection + deterministic signals, optional Claude triage, suggested rules (shadow/enforce), incident alerting
+- [~] Inter-service communication over Tyto (messaging + RPC consolidation) — in progress
 - [ ] hCaptcha/Turnstile as optional pluggable Tier 2 backend
 - [ ] Integration test suite (Testcontainers)
 - [ ] Multi-tenant zone ownership (organisations, member roles)
@@ -304,10 +294,10 @@ Benchmarks are run against a single edge node on commodity hardware (4 vCPU, 8GB
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). All PRs require passing CI (Rust tests, .NET tests, ESLint) and at least one review.
+CI runs on every PR: edge `cargo test` (+ clippy advisory), full .NET solution build, and dashboard `bun build`.
 
 ---
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT.
