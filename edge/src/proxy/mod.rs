@@ -364,13 +364,13 @@ pub async fn handle(
 
     // ── ACME HTTP-01 validation — answered before any zone/rule logic so
     // a block or challenge rule can never break certificate issuance.
-    if req.method() == Method::GET {
-        if let Some(token) = ctx.path.strip_prefix(HTTP01_PATH_PREFIX) {
-            return match state.acme.key_authorization(token) {
-                Some(key_auth) => text(StatusCode::OK, &key_auth),
-                None => text(StatusCode::NOT_FOUND, "404 unknown acme token\n"),
-            };
-        }
+    if req.method() == Method::GET
+        && let Some(token) = ctx.path.strip_prefix(HTTP01_PATH_PREFIX)
+    {
+        return match state.acme.key_authorization(token) {
+            Some(key_auth) => text(StatusCode::OK, &key_auth),
+            None => text(StatusCode::NOT_FOUND, "404 unknown acme token\n"),
+        };
     }
 
     let Some(zone) = config.resolve_zone(&ctx.host) else {

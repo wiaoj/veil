@@ -37,10 +37,11 @@ pub fn resolve(query: Option<&str>, accept_language: Option<&str>) -> Lang {
     if let Some(q) = query {
         for pair in q.split('&') {
             let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-            if (key == "locale" || key == "l") && !value.is_empty() {
-                if let Some(lang) = from_tag(value) {
-                    return lang;
-                }
+            if (key == "locale" || key == "l")
+                && !value.is_empty()
+                && let Some(lang) = from_tag(value)
+            {
+                return lang;
             }
         }
     }
