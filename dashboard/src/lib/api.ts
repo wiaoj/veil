@@ -392,3 +392,28 @@ export interface TrafficIncident {
   verdict: AnalystVerdict | null
   action: string
 }
+
+export interface ApplyAiRuleResult {
+  applied: boolean
+  action: string
+  reason: string | null
+}
+
+/**
+ * Manually applies an AI-suggested rule to a zone (one-click apply). `shadow`
+ * stages it observe-only (Log action); otherwise the real action is enforced.
+ * Returns the outcome (applied + resolved action, or a reason it was skipped).
+ */
+export async function applyAiRule(
+  zone: string,
+  rule: SuggestedRule,
+  shadow: boolean,
+): Promise<ApplyAiRuleResult> {
+  const result = await apiSend<ApplyAiRuleResult>('/v1/intelligence/incidents/apply', 'POST', {
+    zone,
+    rule,
+    shadow,
+  })
+  if (result === null) throw new Error('Boş yanıt.')
+  return result
+}

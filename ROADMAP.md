@@ -327,7 +327,7 @@
 - [x] Alerting — `WebhookSiemAlerter` fans each incident to a webhook (JSON POST, `Intelligence:WebhookUrl`) and mirrors it to the SIEM endpoint (NDJSON, reusing the `Siem` section). Best-effort, no-op when no sink is configured.
 
 ### 11.4 Dashboard
-- [x] "Intelligence" view — live anomaly feed (`/intelligence` route, "Yapay zeka") reading `GET /v1/intelligence/incidents` (Veil.Api proxy → worker), auto-refreshing every 10s. Per-incident detail + suggested rule shown. *(One-click manual apply still pending — auto-apply already lands rules server-side.)*
+- [x] "Intelligence" view — live anomaly feed (`/intelligence` route, "Yapay zeka") reading `GET /v1/intelligence/incidents` (Veil.Api proxy → worker), auto-refreshing every 10s. Per-incident detail + suggested rule shown, with **one-click manual apply** (Uygula/Shadow) → `POST /v1/intelligence/incidents/apply`. The endpoint shares `AiRuleService` with the worker's RPC auto-apply, so zone resolution + condition/action mapping live in one place.
 ## 12. Inter-service communication over Tyto
 
 Service-to-service calls between the .NET hosts are consolidated onto Tyto, so

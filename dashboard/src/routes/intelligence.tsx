@@ -1,9 +1,10 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import type { TrafficIncident } from '#/lib/api'
-import { UnauthorizedError, apiGet, hasSession } from '#/lib/api'
+import { UnauthorizedError, apiGet, applyAiRule, hasSession } from '#/lib/api'
 import { PageHeader, PageState } from '@/components/PageState'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
 export const Route = createFileRoute('/intelligence')({
@@ -27,6 +28,27 @@ function scoreTone(score: number): string {
 
 function IncidentCard({ incident }: { incident: TrafficIncident }) {
   const rule = incident.verdict?.suggestedRule ?? incident.suggestedRule
+  const [applying, setApplying] = useState<false | 'enforce' | 'shadow'>(false)
+  const [outcome, setOutcome] = useState<string | null>(null)
+
+  async function apply(shadow: boolean) {
+    if (!rule) return
+    setApplying(shadow ? 'shadow' : 'enforce')
+    setOutcome(null)
+    try {
+      const res = await applyAiRule(incident.zone, rule, shadow)
+      setOutcome(
+        res.applied
+          ? `Uygulandı → ${res.action}`
+          : `Uygulanamadı: ${res.reason ?? 'bilinmeyen sebep'}`,
+      )
+    } catch (err) {
+      setOutcome(err instanceof Error ? err.message : 'İstek başarısız.')
+    } finally {
+      setApplying(false)
+    }
+  }
+
   return (
     <Card>
       <CardContent className="space-y-3">
@@ -86,11 +108,32 @@ function IncidentCard({ incident }: { incident: TrafficIncident }) {
         </div>
 
         {rule && (
-          <div className="border-border text-muted-foreground rounded-md border border-dashed px-3 py-2 text-xs">
-            önerilen kural:{' '}
-            <span className="text-foreground font-mono">
-              {rule.conditionType} = {rule.value} → {rule.action}
-            </span>
+          <div className="border-border space-y-2 rounded-md border border-dashed px-3 py-2 text-xs">
+            <div className="text-muted-foreground">
+              önerilen kural:{' '}
+              <span className="text-foreground font-mono">
+                {rule.conditionType} = {rule.value} → {rule.action}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={applying !== false}
+                onClick={() => void apply(false)}
+              >
+                {applying === 'enforce' ? 'Uygulanıyor…' : 'Uygula'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={applying !== false}
+                onClick={() => void apply(true)}
+              >
+                {applying === 'shadow' ? 'Ekleniyor…' : 'Shadow'}
+              </Button>
+              {outcome && <span className="text-muted-foreground">{outcome}</span>}
+            </div>
           </div>
         )}
       </CardContent>
@@ -143,7 +186,7 @@ function IntelligencePage() {
     <div className="mx-auto max-w-4xl space-y-4">
       <PageHeader
         title="Yapay zeka analizi"
-        description={`ML.NET tabanlı canlı anomali tespiti (${REFRESH_MS / 1000}s'de bir yenilenir). Her olay bellekte saptanır; yüksek güvenli öneriler enforce, diğerleri shadow modunda denenir.`}
+        description={`ML.NET tabanlı canlı anomali tespiti (${REFRESH_MS / 1000}s'de bir yenilenir). Yüksek güvenli öneriler otomatik enforce, diğerleri shadow olur; bir öneriyi elle de uygulayabilirsiniz.`}
       />
 
       {error && <p className="text-destructive text-sm">{error}</p>}
