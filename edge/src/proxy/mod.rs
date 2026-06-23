@@ -564,6 +564,7 @@ fn record_request(
         client_ip: ctx.client_ip.to_string(),
         user_agent: ctx.user_agent.clone(),
         duration_ms: started.elapsed().as_millis() as u64,
+        asn: ctx.asn,
     });
 }
 

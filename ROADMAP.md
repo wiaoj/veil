@@ -316,8 +316,9 @@
 - [x] Cost/rate guards — triage runs per *incident*, not per request; per-interval aggregation + cooldown summarise traffic before the model is ever called
 
 ### 11.2 Live anomaly detection
-- [x] Rolling traffic-window features **in memory** off the live ingest stream (req rate, verdict mix, top IPs/paths, distinct IPs) per zone — no ClickHouse round-trip, so detection is instant. *(ASN/challenge-pass features deferred.)*
-- [x] **ML.NET** spike detection (`MlAnomalyDetector`, IID spike over the per-zone rate series) + deterministic attack signals (block ratio / single-source share) — always-on, in-process, no LLM
+- [x] Rolling traffic-window features **in memory** off the live ingest stream (req rate, verdict mix, top IPs/paths/**ASNs**, distinct IPs) per zone — no ClickHouse round-trip, so detection is instant. *(challenge-pass feature still deferred.)*
+- [x] **ML.NET** spike detection (`MlAnomalyDetector`, IID spike over the per-zone rate series) + deterministic attack signals (block ratio / single-source share / **single-ASN share** for distributed floods) — always-on, in-process, no LLM
+- [x] ASN signal end to end — edge stamps `asn` (GeoIP) on each request log; carried through ingest → ClickHouse (`asn` column) and the in-memory window; `distributed_asn_flood` classification suggests an `asn=… → challenge` rule when many IPs concentrate in one network
 - [x] Deterministic classification + suggested rule from the signals (single_source_flood / path_flood / http_flood / traffic_spike) — the ML-only path needs no LLM
 - [x] *(Optional)* LLM triage layer for natural-language classification + summary (`AnthropicAnalystClient`, structured outputs) — off by default, enriches the incident when an API key is set
 

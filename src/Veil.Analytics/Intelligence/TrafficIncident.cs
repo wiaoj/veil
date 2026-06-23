@@ -40,6 +40,9 @@ public sealed record TrafficIncident {
     public required TrafficCount[] TopIps { get; init; }
     public required TrafficCount[] TopPaths { get; init; }
 
+    /// <summary>Top source ASNs over the window (empty when no GeoIP ASN data).</summary>
+    public TrafficCount[] TopAsns { get; init; } = [];
+
     /// <summary>Deterministic, LLM-free classification derived from the signals.</summary>
     public required string Classification { get; init; }
 

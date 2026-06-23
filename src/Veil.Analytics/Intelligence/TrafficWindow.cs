@@ -12,6 +12,7 @@ internal sealed class TrafficWindow(int maxTrackedKeys) {
     private readonly object _gate = new();
     private readonly Dictionary<string, int> _ipCounts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _pathCounts = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _asnCounts = new(StringComparer.Ordinal);
 
     private long _requests;
     private long _blocked;       // verdict "block" or "ip_reputation"
@@ -42,6 +43,10 @@ internal sealed class TrafficWindow(int maxTrackedKeys) {
             }
             Bump(this._ipCounts, row.ClientIp);
             Bump(this._pathCounts, row.Path);
+            // asn 0 means "unknown" (no ASN MMDB or a miss) — don't track it,
+            // or a no-GeoIP node would show a fake "100% from AS0" concentration.
+            if(row.Asn != 0)
+                Bump(this._asnCounts, row.Asn.ToString());
         }
     }
 
@@ -50,6 +55,7 @@ internal sealed class TrafficWindow(int maxTrackedKeys) {
         lock(this._gate) {
             TrafficCount[] topIps = Top(this._ipCounts, 5);
             TrafficCount[] topPaths = Top(this._pathCounts, 5);
+            TrafficCount[] topAsns = Top(this._asnCounts, 5);
 
             TrafficSnapshot snapshot = new(
                 Requests: this._requests,
@@ -59,11 +65,13 @@ internal sealed class TrafficWindow(int maxTrackedKeys) {
                 DistinctIps: this._ipCounts.Count,
                 RatePerSecond: this._requests / (double)Math.Max(1, intervalSeconds),
                 TopIps: topIps,
-                TopPaths: topPaths);
+                TopPaths: topPaths,
+                TopAsns: topAsns);
 
             this._requests = this._blocked = this._challenged = this._rateLimited = 0;
             this._ipCounts.Clear();
             this._pathCounts.Clear();
+            this._asnCounts.Clear();
             return snapshot;
         }
     }
@@ -93,9 +101,11 @@ internal sealed record TrafficSnapshot(
     int DistinctIps,
     double RatePerSecond,
     TrafficCount[] TopIps,
-    TrafficCount[] TopPaths) {
+    TrafficCount[] TopPaths,
+    TrafficCount[] TopAsns) {
 
     public double BlockedRatio => (this.Blocked + this.RateLimited) / (double)Math.Max(1, this.Requests);
     public double ChallengedRatio => this.Challenged / (double)Math.Max(1, this.Requests);
     public double TopIpShare => this.TopIps.Length == 0 ? 0 : this.TopIps[0].Count / (double)Math.Max(1, this.Requests);
+    public double TopAsnShare => this.TopAsns.Length == 0 ? 0 : this.TopAsns[0].Count / (double)Math.Max(1, this.Requests);
 }

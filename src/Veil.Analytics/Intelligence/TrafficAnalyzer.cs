@@ -43,8 +43,15 @@ public sealed class TrafficAnalyzer(
             bool rateSpike = ml.IsAnomaly && snapshot.RatePerSecond >= this._options.MinRequestsPerSecond;
             bool highBlock = snapshot.Requests >= 50 && snapshot.BlockedRatio >= this._options.BlockedRatioThreshold;
             bool singleSource = snapshot.Requests >= 50 && snapshot.TopIpShare >= this._options.TopIpShareThreshold;
+            // Distributed-but-single-network flood: many IPs, one ASN. Require
+            // several distinct IPs so this is genuinely distributed (a single-IP
+            // flood is already covered by singleSource) and not dominated by one IP.
+            bool singleAsn = snapshot.Requests >= 50
+                && snapshot.DistinctIps >= 5
+                && snapshot.TopAsnShare >= this._options.AsnShareThreshold
+                && snapshot.TopIpShare < this._options.TopIpShareThreshold;
 
-            int score = (rateSpike ? 50 : 0) + (highBlock ? 30 : 0) + (singleSource ? 30 : 0);
+            int score = (rateSpike ? 50 : 0) + (highBlock ? 30 : 0) + (singleSource ? 30 : 0) + (singleAsn ? 30 : 0);
             if(score < this._options.IncidentScoreThreshold)
                 continue;
             if(nowUtc - window.LastIncidentUtc < TimeSpan.FromSeconds(this._options.CooldownSeconds))
@@ -59,8 +66,10 @@ public sealed class TrafficAnalyzer(
                 signals.Add($"high_block_ratio ({snapshot.BlockedRatio:P0})");
             if(singleSource)
                 signals.Add($"single_source ({snapshot.TopIps[0].Value} = {snapshot.TopIpShare:P0})");
+            if(singleAsn)
+                signals.Add($"single_asn (AS{snapshot.TopAsns[0].Value} = {snapshot.TopAsnShare:P0}, {snapshot.DistinctIps} IPs)");
 
-            (string classification, SuggestedRule? rule) = Classify(snapshot, rateSpike, highBlock, singleSource);
+            (string classification, SuggestedRule? rule) = Classify(snapshot, rateSpike, highBlock, singleSource, singleAsn);
 
             incidents.Add(new TrafficIncident {
                 Id = Guid.NewGuid().ToString("n"),
@@ -74,6 +83,7 @@ public sealed class TrafficAnalyzer(
                 DistinctIps = snapshot.DistinctIps,
                 TopIps = snapshot.TopIps,
                 TopPaths = snapshot.TopPaths,
+                TopAsns = snapshot.TopAsns,
                 Classification = classification,
                 SuggestedRule = rule
             });
@@ -88,13 +98,20 @@ public sealed class TrafficAnalyzer(
     /// client rather than hard-blocking it.
     /// </summary>
     private static (string Classification, SuggestedRule? Rule) Classify(
-        TrafficSnapshot s, bool rateSpike, bool highBlock, bool singleSource) {
+        TrafficSnapshot s, bool rateSpike, bool highBlock, bool singleSource, bool singleAsn) {
 
         if(singleSource) {
             string ip = s.TopIps[0].Value;
             // A single IP dominating + lots of enforcement looks like a focused
             // flood/brute-force → challenge that IP.
             return ("single_source_flood", new SuggestedRule("ip", ip, "challenge"));
+        }
+
+        if(singleAsn) {
+            string asn = s.TopAsns[0].Value;
+            // Many IPs from one network → challenge the whole ASN rather than
+            // playing whack-a-mole with individual IPs.
+            return ("distributed_asn_flood", new SuggestedRule("asn", asn, "challenge"));
         }
 
         if(rateSpike && highBlock) {

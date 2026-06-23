@@ -32,6 +32,13 @@ public sealed record IntelligenceOptions {
     /// <summary>Single-IP share of traffic above this flags a single-source flood.</summary>
     public double TopIpShareThreshold { get; init; } = 0.5;
 
+    /// <summary>
+    /// Single-ASN share of traffic above this flags a distributed flood
+    /// concentrated in one network (many IPs, one provider) — caught even when
+    /// no single IP dominates.
+    /// </summary>
+    public double AsnShareThreshold { get; init; } = 0.6;
+
     /// <summary>Anomaly score (0..100) at or above which an incident is raised.</summary>
     public int IncidentScoreThreshold { get; init; } = 60;
 

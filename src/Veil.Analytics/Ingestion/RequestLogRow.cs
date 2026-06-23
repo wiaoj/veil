@@ -19,4 +19,5 @@ public sealed record RequestLogRow(
     [property: JsonPropertyName("rule_id")] string RuleId,
     [property: JsonPropertyName("client_ip")] string ClientIp,
     [property: JsonPropertyName("user_agent")] string UserAgent,
-    [property: JsonPropertyName("duration_ms")] long DurationMs);
+    [property: JsonPropertyName("duration_ms")] long DurationMs,
+    [property: JsonPropertyName("asn")] uint Asn);

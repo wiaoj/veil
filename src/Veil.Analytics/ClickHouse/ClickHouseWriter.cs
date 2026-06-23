@@ -36,7 +36,8 @@ public sealed class ClickHouseWriter(IHttpClientFactory httpClientFactory, IOpti
                 rule_id String,
                 client_ip String,
                 user_agent String,
-                duration_ms UInt32
+                duration_ms UInt32,
+                asn UInt32 DEFAULT 0
             )
             ENGINE = MergeTree
             PARTITION BY toYYYYMMDD(ts)
@@ -45,6 +46,12 @@ public sealed class ClickHouseWriter(IHttpClientFactory httpClientFactory, IOpti
             """;
 
         await ExecuteAsync(ddl, body: null, cancellationToken);
+
+        // Idempotently add columns introduced after a table was first created,
+        // so existing deployments pick them up without a manual migration.
+        await ExecuteAsync(
+            $"ALTER TABLE {TableName} ADD COLUMN IF NOT EXISTS asn UInt32 DEFAULT 0",
+            body: null, cancellationToken);
     }
 
     public async Task InsertAsync(IReadOnlyList<Ingestion.RequestLogRow> rows, CancellationToken cancellationToken) {

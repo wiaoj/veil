@@ -43,6 +43,11 @@ pub struct LogRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_agent: Option<String>,
     pub duration_ms: u64,
+    /// Autonomous System Number from GeoIP enrichment (`None` when no ASN MMDB
+    /// or the lookup missed). Lets the analytics layer detect distributed
+    /// floods concentrated in one network.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asn: Option<u32>,
 }
 
 pub fn now_ms() -> u64 {
@@ -149,6 +154,7 @@ mod tests {
             client_ip: "192.0.2.1".to_owned(),
             user_agent: Some("test".to_owned()),
             duration_ms: 3,
+            asn: None,
         }
     }
 

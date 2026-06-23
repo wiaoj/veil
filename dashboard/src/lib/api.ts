@@ -387,6 +387,7 @@ export interface TrafficIncident {
   distinctIps: number
   topIps: Array<TrafficCount>
   topPaths: Array<TrafficCount>
+  topAsns: Array<TrafficCount>
   classification: string
   suggestedRule: SuggestedRule | null
   verdict: AnalystVerdict | null

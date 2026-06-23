@@ -105,6 +105,12 @@ function IncidentCard({ incident }: { incident: TrafficIncident }) {
           <span className="truncate" title={incident.topIps.map((t) => t.value).join(', ')}>
             en çok IP <b className="text-foreground font-mono">{incident.topIps[0]?.value ?? '—'}</b>
           </span>
+          {incident.topAsns.length > 0 && (
+            <span className="truncate" title={incident.topAsns.map((t) => `AS${t.value}`).join(', ')}>
+              en çok ASN{' '}
+              <b className="text-foreground font-mono">AS{incident.topAsns[0]?.value ?? '—'}</b>
+            </span>
+          )}
         </div>
 
         {rule && (

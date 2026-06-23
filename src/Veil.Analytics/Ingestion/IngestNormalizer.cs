@@ -53,7 +53,8 @@ public static class IngestNormalizer {
                 Clip(record.RuleId, MaxRuleIdLength),
                 Clip(record.ClientIp, MaxClientIpLength),
                 Clip(record.UserAgent, MaxUserAgentLength),
-                Math.Max(record.DurationMs, 0)));
+                Math.Max(record.DurationMs, 0),
+                record.Asn ?? 0));
         }
 
         return rows;
