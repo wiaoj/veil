@@ -4,8 +4,9 @@ namespace Veil.Analytics.Intelligence;
 
 /// <summary>
 /// Bounded in-memory ring of recent incidents, newest first. The dashboard reads
-/// this; it is intentionally process-local (the live, "anlık" view) — ClickHouse
-/// remains the durable archive.
+/// this; it is the fast, process-local "live" view. Durability is provided by
+/// <see cref="IIncidentArchive"/> (PostgreSQL): incidents are persisted as they
+/// are raised and the ring is rehydrated from the archive on startup.
 /// </summary>
 public sealed class IncidentStore(int capacity) {
     private readonly ConcurrentQueue<TrafficIncident> _incidents = new();

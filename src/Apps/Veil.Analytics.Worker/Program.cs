@@ -48,6 +48,9 @@ builder.AddTyto(tyto => {
                 .To("memory", "veil.intelligence.events");
             endpoint.AddHandler<Veil.Analytics.Intelligence.WebhookAlertHandler>();
             endpoint.AddHandler<Veil.Analytics.Intelligence.SiemAlertHandler>();
+            // Durable archive sink: persists each incident so the feed survives
+            // a restart (no-op when no PostgreSQL connection is configured).
+            endpoint.AddHandler<Veil.Analytics.Intelligence.IncidentPersistenceHandler>();
         }));
 
     tyto.AddRpc(rpc => {

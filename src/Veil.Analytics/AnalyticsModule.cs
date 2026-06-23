@@ -46,6 +46,21 @@ public sealed class AnalyticsModule : IModule {
         IntelligenceOptions intelligence =
             configuration.GetSection(IntelligenceOptions.SectionName).Get<IntelligenceOptions>() ?? new IntelligenceOptions();
         services.AddSingleton<IncidentStore>(_ => new IncidentStore(intelligence.MaxIncidents));
+
+        // Durable incident archive (Phase 11 productionisation): persists each
+        // incident to PostgreSQL (own `intelligence` schema, raw Npgsql) so the
+        // live feed survives a worker restart. Falls back to a no-op archive when
+        // no PostgreSQL connection is configured, keeping the bus handler +
+        // hydration service resolvable.
+        string? intelligenceConn = configuration.GetConnectionString("Default");
+        if(intelligence.Enabled && !string.IsNullOrWhiteSpace(intelligenceConn)) {
+            services.AddSingleton<IIncidentArchive>(_ => new NpgsqlIncidentArchive(intelligenceConn));
+            services.AddHostedService<IncidentHydrationService>();
+        }
+        else {
+            services.AddSingleton<IIncidentArchive, NullIncidentArchive>();
+        }
+
         if(intelligence.Enabled) {
             // ML.NET spike detector (in-process; no external dependency). This is
             // the detection brain — the LLM layer below is optional enrichment.

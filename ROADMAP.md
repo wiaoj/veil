@@ -310,7 +310,8 @@
 > `IRuleApplier` to Veil.Api.
 
 ### 11.1 Foundation
-- [x] Intelligence layer — analyzer, incident store, background analysis loop, worker read endpoint (`GET /intelligence/incidents`). *(Lives in Veil.Analytics for the prototype; extract to `Veil.Intelligence` + `intelligence` schema for persistence later.)*
+- [x] Intelligence layer — analyzer, incident store, background analysis loop, worker read endpoint (`GET /intelligence/incidents`). *(Lives in Veil.Analytics; a standalone `Veil.Intelligence` module is still an optional future extraction.)*
+- [x] Incident persistence — incidents are archived to PostgreSQL (own `intelligence` schema, raw Npgsql `NpgsqlIncidentArchive`, jsonb payload + flat columns, 5k-row retention) via a bus sink (`IncidentPersistenceHandler`, best-effort) and the in-memory ring is rehydrated on startup (`IncidentHydrationService`), so the live feed survives a worker restart. No-op archive when no PostgreSQL connection is configured.
 - [x] LLM provider abstraction (`IAnalystClient`) — Claude via the Anthropic Messages API (`AnthropicAnalystClient`), configurable model + key, `NullAnalystClient` no-op when unconfigured
 - [x] Cost/rate guards — triage runs per *incident*, not per request; per-interval aggregation + cooldown summarise traffic before the model is ever called
 
