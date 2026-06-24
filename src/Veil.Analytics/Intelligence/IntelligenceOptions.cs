@@ -39,6 +39,14 @@ public sealed record IntelligenceOptions {
     /// </summary>
     public double AsnShareThreshold { get; init; } = 0.6;
 
+    /// <summary>Challenge pass rate at or below this (with enough volume) flags
+    /// automated clients failing the challenge.</summary>
+    public double ChallengePassRateThreshold { get; init; } = 0.2;
+
+    /// <summary>Minimum challenge interactions before the pass-rate signal applies
+    /// (avoids reacting to a handful of challenges).</summary>
+    public int MinChallengeVolume { get; init; } = 20;
+
     /// <summary>Anomaly score (0..100) at or above which an incident is raised.</summary>
     public int IncidentScoreThreshold { get; init; } = 60;
 

@@ -15,9 +15,10 @@ internal sealed class TrafficWindow(int maxTrackedKeys) {
     private readonly Dictionary<string, int> _asnCounts = new(StringComparer.Ordinal);
 
     private long _requests;
-    private long _blocked;       // verdict "block" or "ip_reputation"
-    private long _challenged;    // verdict "challenge"
-    private long _rateLimited;   // verdict "rate_limited"
+    private long _blocked;          // verdict "block" or "ip_reputation"
+    private long _challenged;       // verdict "challenge" (interstitial served)
+    private long _challengePassed;  // verdict "challenge_pass" (solved + forwarded)
+    private long _rateLimited;      // verdict "rate_limited"
 
     // Per-interval request-rate history, fed to the ML detector. Touched only by
     // the single-threaded sweep, so no lock is needed.
@@ -39,6 +40,7 @@ internal sealed class TrafficWindow(int maxTrackedKeys) {
             switch(row.Verdict) {
                 case "block" or "ip_reputation": this._blocked++; break;
                 case "challenge": this._challenged++; break;
+                case "challenge_pass": this._challengePassed++; break;
                 case "rate_limited": this._rateLimited++; break;
             }
             Bump(this._ipCounts, row.ClientIp);
@@ -61,6 +63,7 @@ internal sealed class TrafficWindow(int maxTrackedKeys) {
                 Requests: this._requests,
                 Blocked: this._blocked,
                 Challenged: this._challenged,
+                ChallengePassed: this._challengePassed,
                 RateLimited: this._rateLimited,
                 DistinctIps: this._ipCounts.Count,
                 RatePerSecond: this._requests / (double)Math.Max(1, intervalSeconds),
@@ -68,7 +71,7 @@ internal sealed class TrafficWindow(int maxTrackedKeys) {
                 TopPaths: topPaths,
                 TopAsns: topAsns);
 
-            this._requests = this._blocked = this._challenged = this._rateLimited = 0;
+            this._requests = this._blocked = this._challenged = this._challengePassed = this._rateLimited = 0;
             this._ipCounts.Clear();
             this._pathCounts.Clear();
             this._asnCounts.Clear();
@@ -97,6 +100,7 @@ internal sealed record TrafficSnapshot(
     long Requests,
     long Blocked,
     long Challenged,
+    long ChallengePassed,
     long RateLimited,
     int DistinctIps,
     double RatePerSecond,
@@ -108,4 +112,15 @@ internal sealed record TrafficSnapshot(
     public double ChallengedRatio => this.Challenged / (double)Math.Max(1, this.Requests);
     public double TopIpShare => this.TopIps.Length == 0 ? 0 : this.TopIps[0].Count / (double)Math.Max(1, this.Requests);
     public double TopAsnShare => this.TopAsns.Length == 0 ? 0 : this.TopAsns[0].Count / (double)Math.Max(1, this.Requests);
+
+    /// <summary>Total challenge interactions (interstitials served + solved).</summary>
+    public long ChallengeVolume => this.Challenged + this.ChallengePassed;
+
+    /// <summary>
+    /// Fraction of challenges that were solved. 1.0 when none were issued (no
+    /// signal). A low rate under real volume means automated clients are failing
+    /// the challenge — a strong bot indicator.
+    /// </summary>
+    public double ChallengePassRate =>
+        this.ChallengeVolume == 0 ? 1.0 : this.ChallengePassed / (double)this.ChallengeVolume;
 }

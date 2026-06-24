@@ -50,8 +50,14 @@ public sealed class TrafficAnalyzer(
                 && snapshot.DistinctIps >= 5
                 && snapshot.TopAsnShare >= this._options.AsnShareThreshold
                 && snapshot.TopIpShare < this._options.TopIpShareThreshold;
+            // Automated clients failing the challenge: real challenge volume but a
+            // low solve rate. Corroborates a bot flood and escalates the mitigation
+            // (challenge clearly isn't stopping them → block).
+            bool lowChallengePass = snapshot.ChallengeVolume >= this._options.MinChallengeVolume
+                && snapshot.ChallengePassRate <= this._options.ChallengePassRateThreshold;
 
-            int score = (rateSpike ? 50 : 0) + (highBlock ? 30 : 0) + (singleSource ? 30 : 0) + (singleAsn ? 30 : 0);
+            int score = (rateSpike ? 50 : 0) + (highBlock ? 30 : 0)
+                + (singleSource ? 30 : 0) + (singleAsn ? 30 : 0) + (lowChallengePass ? 30 : 0);
             if(score < this._options.IncidentScoreThreshold)
                 continue;
             if(nowUtc - window.LastIncidentUtc < TimeSpan.FromSeconds(this._options.CooldownSeconds))
@@ -68,8 +74,10 @@ public sealed class TrafficAnalyzer(
                 signals.Add($"single_source ({snapshot.TopIps[0].Value} = {snapshot.TopIpShare:P0})");
             if(singleAsn)
                 signals.Add($"single_asn (AS{snapshot.TopAsns[0].Value} = {snapshot.TopAsnShare:P0}, {snapshot.DistinctIps} IPs)");
+            if(lowChallengePass)
+                signals.Add($"low_challenge_pass ({snapshot.ChallengePassRate:P0} of {snapshot.ChallengeVolume})");
 
-            (string classification, SuggestedRule? rule) = Classify(snapshot, rateSpike, highBlock, singleSource, singleAsn);
+            (string classification, SuggestedRule? rule) = Classify(snapshot, rateSpike, highBlock, singleSource, singleAsn, lowChallengePass);
 
             incidents.Add(new TrafficIncident {
                 Id = Guid.NewGuid().ToString("n"),
@@ -98,21 +106,30 @@ public sealed class TrafficAnalyzer(
     /// client rather than hard-blocking it.
     /// </summary>
     private static (string Classification, SuggestedRule? Rule) Classify(
-        TrafficSnapshot s, bool rateSpike, bool highBlock, bool singleSource, bool singleAsn) {
+        TrafficSnapshot s, bool rateSpike, bool highBlock, bool singleSource, bool singleAsn, bool lowChallengePass) {
+
+        // If clients are already failing the challenge, escalate the suggestion
+        // from challenge to block — the challenge screen isn't stopping them.
+        string floodAction = lowChallengePass ? "block" : "challenge";
 
         if(singleSource) {
             string ip = s.TopIps[0].Value;
             // A single IP dominating + lots of enforcement looks like a focused
-            // flood/brute-force → challenge that IP.
-            return ("single_source_flood", new SuggestedRule("ip", ip, "challenge"));
+            // flood/brute-force → challenge that IP (block if it fails challenges).
+            return ("single_source_flood", new SuggestedRule("ip", ip, floodAction));
         }
 
         if(singleAsn) {
             string asn = s.TopAsns[0].Value;
             // Many IPs from one network → challenge the whole ASN rather than
-            // playing whack-a-mole with individual IPs.
-            return ("distributed_asn_flood", new SuggestedRule("asn", asn, "challenge"));
+            // playing whack-a-mole with individual IPs (block if failing challenges).
+            return ("distributed_asn_flood", new SuggestedRule("asn", asn, floodAction));
         }
+
+        if(lowChallengePass)
+            // Automated clients failing challenges, but no single safe matcher
+            // (IP/ASN) to act on — surface for a human; challenge already in play.
+            return ("automated_clients", null);
 
         if(rateSpike && highBlock) {
             // Distributed spike already tripping rules. If one path dominates,
