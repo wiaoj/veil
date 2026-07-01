@@ -53,7 +53,7 @@ async fn is_rate_limited(rule: &Rule, ctx: &RequestContext, limiter: &RateLimite
 fn matches(condition: &Condition, ctx: &RequestContext, body: Option<&[u8]>) -> bool {
     match condition {
         Condition::Ip { value } => value.contains(&ctx.client_ip),
-        Condition::PathPrefix { value } => ctx.path.starts_with(value),
+        Condition::PathPrefix { value } => value == "*" || ctx.path.starts_with(value),
         Condition::PathExact { value } => ctx.path == *value,
         Condition::Method { value } => ctx.method.as_str().eq_ignore_ascii_case(value),
         Condition::Header { name, value } => ctx
