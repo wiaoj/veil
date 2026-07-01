@@ -16,6 +16,7 @@ IConfiguration configuration = new ConfigurationBuilder()
     .SetBasePath(AppContext.BaseDirectory)
     .AddJsonFile("appsettings.json", optional: true)
     .AddEnvironmentVariables(prefix: "VEIL_")
+    .AddEnvironmentVariables()
     .AddCommandLine(args)
     .Build();
 

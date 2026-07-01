@@ -14,7 +14,7 @@ const config = defineConfig({
     // Same-origin in dev: the dashboard calls /v1/* and Vite forwards to
     // the control plane, so the API needs no CORS setup.
     proxy: {
-      '/v1': { target: 'https://localhost:7248', secure: false, changeOrigin: true },
+      '/v1': { target: 'http://localhost:5150', secure: false, changeOrigin: true },
     },
   },
 })

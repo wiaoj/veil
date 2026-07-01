@@ -23,6 +23,7 @@ using Veil.Zones;
 using Veil.Zones.Contracts.IntegrationEvents;
 using Wiaoj.Serialization;
 using Wiaoj.Serialization.SystemTextJson;
+using Veil.Api.Internal;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -59,9 +60,8 @@ builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 // AI rule application — shared by the worker RPC (auto-apply) and the dashboard
 // REST endpoint (manual one-click apply). Bind the Intelligence section so the
 // default rate-limit values are honoured on this side too.
-builder.Services.Configure<Veil.Analytics.Intelligence.IntelligenceOptions>(
-    builder.Configuration.GetSection(Veil.Analytics.Intelligence.IntelligenceOptions.SectionName));
-builder.Services.AddSingleton<Veil.Api.Internal.AiRuleService>();
+builder.Services.Configure<IntelligenceOptions>(builder.Configuration.GetSection(IntelligenceOptions.SectionName));
+builder.Services.AddSingleton<AiRuleService>();
 
 builder.AddTyto(tyto => {
     tyto.MessageDefinitions(define => {
