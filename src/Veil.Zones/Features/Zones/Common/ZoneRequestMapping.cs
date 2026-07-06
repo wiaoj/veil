@@ -36,7 +36,7 @@ public static class ZoneRequestMapping {
         Result<TokenTtl> ttl = TokenTtl.Create(TimeSpan.FromSeconds(request.ExpirationSeconds));
         if(ttl.IsFailure) return Result.Failure<ChallengeConfig>(ttl.FirstError);
 
-        return ChallengeConfig.Create(difficulty.Value, ttl.Value, request.RequireCaptcha);
+        return ChallengeConfig.Create(difficulty.Value, ttl.Value, request.RequireCaptcha, request.RiskThreshold);
     }
 
     public static Result<List<RuleCondition>> ToDomain(this IReadOnlyList<RuleConditionRequest> requests) {

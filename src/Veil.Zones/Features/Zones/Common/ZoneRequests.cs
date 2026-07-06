@@ -40,7 +40,8 @@ public sealed record ChallengeConfigRequest(
     bool Enabled = true,
     int Difficulty = 20,
     int ExpirationSeconds = 600,
-    bool RequireCaptcha = false);
+    bool RequireCaptcha = false,
+    int RiskThreshold = 70);
 
 /// <summary>
 /// Flat wire representation of a rule condition. <paramref name="Type"/>

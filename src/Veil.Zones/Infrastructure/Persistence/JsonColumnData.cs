@@ -68,14 +68,16 @@ internal sealed record ChallengeConfigData(
     bool Enabled,
     int PowDifficulty,
     double TokenTtlSeconds,
-    bool RequireCaptchaOnHighRisk) {
+    bool RequireCaptchaOnHighRisk,
+    int? RiskThreshold = null) {
 
     public static ChallengeConfigData FromDomain(ChallengeConfig config) {
         return new ChallengeConfigData(
             config.Enabled,
             config.PowDifficulty.Value,
             config.TokenTtl.Value.TotalSeconds,
-            config.RequireCaptchaOnHighRisk);
+            config.RequireCaptchaOnHighRisk,
+            config.RiskThreshold);
     }
 
     public ChallengeConfig ToDomain() {
@@ -83,6 +85,8 @@ internal sealed record ChallengeConfigData(
             this.Enabled,
             this.PowDifficulty,
             TimeSpan.FromSeconds(this.TokenTtlSeconds),
-            this.RequireCaptchaOnHighRisk);
+            this.RequireCaptchaOnHighRisk,
+            // Rows written before RiskThreshold existed default to 70.
+            this.RiskThreshold ?? 70);
     }
 }

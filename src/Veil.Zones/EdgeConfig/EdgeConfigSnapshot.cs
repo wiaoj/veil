@@ -31,7 +31,13 @@ public sealed record EdgeZoneConfig(
     [property: JsonPropertyName("managed_rules"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     EdgeManagedRulesConfig? ManagedRules = null,
     [property: JsonPropertyName("shadow"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    bool Shadow = false);
+    bool Shadow = false,
+    [property: JsonPropertyName("challenge"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    EdgeChallengeConfig? Challenge = null);
+
+/// <summary>Per-zone challenge knob the edge consumes: the Tier-2 risk threshold.</summary>
+public sealed record EdgeChallengeConfig(
+    [property: JsonPropertyName("tier2_risk_threshold")] int Tier2RiskThreshold);
 
 /// <summary>Presence enables the edge response cache (defaults on the edge side).</summary>
 public sealed record EdgeCacheConfig();
@@ -127,6 +133,10 @@ public static class EdgeConfigSnapshotBuilder {
                     zone.ManagedRules.Action == ManagedRuleAction.Challenge ? "challenge" : "block")
                 : null;
 
+            EdgeChallengeConfig? challenge = zone.Status is not ZoneStatus.Paused && zone.Challenge.Enabled
+                ? new EdgeChallengeConfig(zone.Challenge.RiskThreshold)
+                : null;
+
             edgeZones.Add(new EdgeZoneConfig(
                 zone.Hostname.Value,
                 [zone.Hostname.Value],
@@ -135,7 +145,8 @@ public static class EdgeConfigSnapshotBuilder {
                 tls,
                 zone.CacheEnabled ? new EdgeCacheConfig() : null,
                 managed,
-                zone.Shadow));
+                zone.Shadow,
+                challenge));
         }
 
         return new EdgeConfigSnapshot(TrustForwardedHeaders: false, edgeZones);

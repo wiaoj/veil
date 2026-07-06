@@ -58,6 +58,7 @@ public static class ZoneResponseMapping {
             challenge.Enabled,
             challenge.PowDifficulty.Value,
             (int)challenge.TokenTtl.Value.TotalSeconds,
-            challenge.RequireCaptchaOnHighRisk);
+            challenge.RequireCaptchaOnHighRisk,
+            challenge.RiskThreshold);
     }
 }

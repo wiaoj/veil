@@ -9,25 +9,35 @@ public sealed class ChallengeConfig {
     public PowDifficulty PowDifficulty { get; }
     public TokenTtl TokenTtl { get; }
     public bool RequireCaptchaOnHighRisk { get; }
+    /// <summary>
+    /// Risk skoru (0..100) bu eşiğin üstündeyse Tier-1 PoW yerine Tier-2
+    /// etkileşim challenge'ı sunulur. Edge'e push edilen tek per-zone knob.
+    /// </summary>
+    public int RiskThreshold { get; }
+
+    private const int DefaultRiskThreshold = 70;
 
     /// <summary>
     /// Challenge devre dışı preset.
     /// </summary>
     public static ChallengeConfig Disabled => new(
-        false, 
-        PowDifficulty.Create(20).Value, 
-        TokenTtl.Create(TimeSpan.FromMinutes(10)).Value, 
-        false);
+        false,
+        PowDifficulty.Create(20).Value,
+        TokenTtl.Create(TimeSpan.FromMinutes(10)).Value,
+        false,
+        DefaultRiskThreshold);
 
     private ChallengeConfig(
         bool enabled,
         PowDifficulty powDifficulty,
         TokenTtl tokenTtl,
-        bool requireCaptchaOnHighRisk) {
+        bool requireCaptchaOnHighRisk,
+        int riskThreshold) {
         this.Enabled = enabled;
         this.PowDifficulty = powDifficulty;
         this.TokenTtl = tokenTtl;
         this.RequireCaptchaOnHighRisk = requireCaptchaOnHighRisk;
+        this.RiskThreshold = Math.Clamp(riskThreshold, 0, 100);
     }
 
     /// <summary>
@@ -38,12 +48,14 @@ public sealed class ChallengeConfig {
         bool enabled,
         int powDifficulty,
         TimeSpan tokenTtl,
-        bool requireCaptchaOnHighRisk) {
+        bool requireCaptchaOnHighRisk,
+        int riskThreshold) {
         return new ChallengeConfig(
             enabled,
             PowDifficulty.Create(powDifficulty).Value,
             TokenTtl.Create(tokenTtl).Value,
-            requireCaptchaOnHighRisk);
+            requireCaptchaOnHighRisk,
+            riskThreshold);
     }
 
     public static ChallengeConfig CreateDefault() {
@@ -51,18 +63,21 @@ public sealed class ChallengeConfig {
             true,
             PowDifficulty.Create(20).Value,
             TokenTtl.Create(TimeSpan.FromMinutes(10)).Value,
-            false);
+            false,
+            DefaultRiskThreshold);
     }
 
     public static ChallengeConfig Create(
         PowDifficulty powDifficulty,
         TokenTtl tokenTtl,
-        bool requireCaptchaOnHighRisk) {
-        
+        bool requireCaptchaOnHighRisk,
+        int riskThreshold = DefaultRiskThreshold) {
+
         return new ChallengeConfig(
             true,
             powDifficulty,
             tokenTtl,
-            requireCaptchaOnHighRisk);
+            requireCaptchaOnHighRisk,
+            riskThreshold);
     }
 }

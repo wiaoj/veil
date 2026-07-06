@@ -408,6 +408,7 @@ function EditChallengeDialog({
   const [difficulty, setDifficulty] = useState(zone.challenge.difficulty)
   const [expiration, setExpiration] = useState(zone.challenge.expirationSeconds)
   const [requireCaptcha, setRequireCaptcha] = useState(zone.challenge.requireCaptcha)
+  const [riskThreshold, setRiskThreshold] = useState(zone.challenge.riskThreshold)
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -416,6 +417,7 @@ function EditChallengeDialog({
       difficulty,
       expirationSeconds: expiration,
       requireCaptcha,
+      riskThreshold,
     })
     setOpen(false)
   }
@@ -466,6 +468,18 @@ function EditChallengeDialog({
                 disabled={!enabled}
               />
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ch-risk">Tier-2 risk eşiği (0-100)</Label>
+            <Input
+              id="ch-risk"
+              type="number"
+              min={0}
+              max={100}
+              value={riskThreshold}
+              onChange={(e) => setRiskThreshold(Number(e.target.value))}
+              disabled={!enabled}
+            />
           </div>
           <Label className="cursor-pointer">
             <input

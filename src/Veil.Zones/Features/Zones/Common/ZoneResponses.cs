@@ -19,7 +19,8 @@ public sealed record ChallengeConfigResponse(
     bool Enabled,
     int Difficulty,
     int ExpirationSeconds,
-    bool RequireCaptcha);
+    bool RequireCaptcha,
+    int RiskThreshold);
 
 /// <summary>
 /// Flat wire representation of a rule condition; same shape as the request

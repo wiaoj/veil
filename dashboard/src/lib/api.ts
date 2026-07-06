@@ -210,6 +210,7 @@ export interface ZoneDetail {
     difficulty: number
     expirationSeconds: number
     requireCaptcha: boolean
+    riskThreshold: number
   }
   rules: Array<Rule>
   cacheEnabled: boolean
