@@ -483,14 +483,14 @@ pub async fn handle(
             Verdict::RateLimited { .. } => "shadow_rate_limited",
             Verdict::Allow => "allow",
         };
-        dispatch_forward(source, &ctx, &zone.upstream, &state).await
+        dispatch_forward(source, &ctx, zone.upstream.select(ctx.client_ip), &state).await
     } else {
         match &verdict {
-            Verdict::Allow => dispatch_forward(source, &ctx, &zone.upstream, &state).await,
+            Verdict::Allow => dispatch_forward(source, &ctx, zone.upstream.select(ctx.client_ip), &state).await,
             Verdict::Challenge { .. } => {
                 if state.challenge.verify_token(&ctx.headers, ctx.client_ip) {
                     label = "challenge_pass";
-                    dispatch_forward(source, &ctx, &zone.upstream, &state).await
+                    dispatch_forward(source, &ctx, zone.upstream.select(ctx.client_ip), &state).await
                 } else {
                     state.challenge.issue_challenge(&ctx, zone.challenge.as_ref())
                 }

@@ -45,8 +45,9 @@ pub struct Zone {
     pub name: String,
     /// Host names this zone serves. `"*"` acts as a catch-all fallback.
     pub hosts: Vec<String>,
-    /// Upstream origin, e.g. `http://127.0.0.1:3000`.
-    pub upstream: String,
+    /// Upstream origin(s). Accepts either a bare URL string (single target) or
+    /// `{ "targets": [{"url","weight"}], "strategy": "..." }` for load balancing.
+    pub upstream: Upstream,
     #[serde(default)]
     pub rules: Vec<Rule>,
     /// Control-plane-provisioned certificate material for this zone's hosts
@@ -65,6 +66,116 @@ pub struct Zone {
     /// is forwarded. Lets a rule set be validated against live traffic first.
     #[serde(default)]
     pub shadow: bool,
+}
+
+/// Load-balancing strategy across a zone's upstream targets. Mirrors the
+/// control plane's `LoadBalanceStrategy`.
+#[derive(Debug, Clone, Copy, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LbStrategy {
+    #[default]
+    RoundRobin,
+    /// The edge has no upstream in-flight counters yet, so this currently
+    /// behaves as weighted round-robin.
+    LeastConnections,
+    IpHash,
+}
+
+/// One upstream target and its relative weight (round-robin picks each target
+/// proportionally to its weight).
+#[derive(Debug, Clone)]
+pub struct UpstreamTarget {
+    pub url: String,
+    pub weight: u32,
+}
+
+/// A zone's upstream: one or more targets plus a selection strategy. Selection
+/// is per request; the round-robin cursor lives for the life of a config
+/// snapshot (a config push resets it, which is harmless).
+#[derive(Debug, Deserialize)]
+#[serde(from = "UpstreamWire")]
+pub struct Upstream {
+    pub targets: Vec<UpstreamTarget>,
+    pub strategy: LbStrategy,
+    /// Target indices expanded by weight, for O(1) weighted round-robin.
+    weighted: Vec<usize>,
+    cursor: std::sync::atomic::AtomicUsize,
+}
+
+impl Upstream {
+    /// Picks the upstream URL for this request per the zone's strategy. Empty
+    /// string when the zone has no target (malformed config) — the forward then
+    /// fails as a gateway error rather than panicking.
+    pub fn select(&self, client_ip: IpAddr) -> &str {
+        if self.targets.len() <= 1 {
+            return self.targets.first().map_or("", |t| t.url.as_str());
+        }
+        let index = match self.strategy {
+            LbStrategy::IpHash => {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                client_ip.hash(&mut hasher);
+                (hasher.finish() as usize) % self.targets.len()
+            }
+            // RoundRobin + LeastConnections (no in-flight tracking yet).
+            _ => {
+                let n = self.cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.weighted[n % self.weighted.len()]
+            }
+        };
+        self.targets.get(index).map_or("", |t| t.url.as_str())
+    }
+}
+
+/// Deserialization shim: accept a bare URL string (single target) or the
+/// structured `{ targets, strategy }` form.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum UpstreamWire {
+    Single(String),
+    Structured {
+        targets: Vec<TargetWire>,
+        #[serde(default)]
+        strategy: LbStrategy,
+    },
+}
+
+#[derive(Deserialize)]
+struct TargetWire {
+    url: String,
+    #[serde(default = "default_weight")]
+    weight: u32,
+}
+
+fn default_weight() -> u32 {
+    1
+}
+
+impl From<UpstreamWire> for Upstream {
+    fn from(wire: UpstreamWire) -> Self {
+        let (targets, strategy) = match wire {
+            UpstreamWire::Single(url) => {
+                (vec![UpstreamTarget { url, weight: 1 }], LbStrategy::RoundRobin)
+            }
+            UpstreamWire::Structured { targets, strategy } => (
+                targets
+                    .into_iter()
+                    .map(|t| UpstreamTarget { url: t.url, weight: t.weight.max(1) })
+                    .collect(),
+                strategy,
+            ),
+        };
+        let mut weighted = Vec::new();
+        for (i, target) in targets.iter().enumerate() {
+            for _ in 0..target.weight.max(1) {
+                weighted.push(i);
+            }
+        }
+        if weighted.is_empty() {
+            weighted.push(0);
+        }
+        Upstream { targets, strategy, weighted, cursor: std::sync::atomic::AtomicUsize::new(0) }
+    }
 }
 
 impl Zone {
@@ -218,17 +329,25 @@ impl Config {
                     zone.name
                 )));
             }
-            let uri: Uri = zone.upstream.parse().map_err(|_| {
-                ConfigError::Invalid(format!(
-                    "zone '{}' upstream '{}' is not a valid URI",
-                    zone.name, zone.upstream
-                ))
-            })?;
-            if !matches!(uri.scheme_str(), Some("http" | "https")) || uri.authority().is_none() {
+            if zone.upstream.targets.is_empty() {
                 return Err(ConfigError::Invalid(format!(
-                    "zone '{}' upstream must be an absolute http:// or https:// URI",
+                    "zone '{}' has no upstream target",
                     zone.name
                 )));
+            }
+            for target in &zone.upstream.targets {
+                let uri: Uri = target.url.parse().map_err(|_| {
+                    ConfigError::Invalid(format!(
+                        "zone '{}' upstream '{}' is not a valid URI",
+                        zone.name, target.url
+                    ))
+                })?;
+                if !matches!(uri.scheme_str(), Some("http" | "https")) || uri.authority().is_none() {
+                    return Err(ConfigError::Invalid(format!(
+                        "zone '{}' upstream '{}' must be an absolute http:// or https:// URI",
+                        zone.name, target.url
+                    )));
+                }
             }
             for rule in &zone.rules {
                 if rule.action == Action::RateLimit && rule.rate_limit.is_none() {
@@ -350,6 +469,64 @@ mod tests {
                 "rules": [{"id": "r", "priority": 1, "action": "block",
                            "conditions": [],
                            "rate_limit": {"requests": 5, "window_secs": 10}}]}]}"#,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ConfigError::Invalid(_)));
+    }
+
+    fn zone_with_upstream(upstream_json: &str) -> Zone {
+        let config = Config::from_json(&format!(
+            r#"{{"zones": [{{"name": "z", "hosts": ["*"], "upstream": {upstream_json}, "rules": []}}]}}"#
+        ))
+        .unwrap();
+        config.zones.into_iter().next().unwrap()
+    }
+
+    #[test]
+    fn bare_string_upstream_is_a_single_target() {
+        let zone = zone_with_upstream(r#""http://127.0.0.1:3000""#);
+        assert_eq!(zone.upstream.targets.len(), 1);
+        assert_eq!(zone.upstream.strategy, LbStrategy::RoundRobin);
+        let ip: IpAddr = "1.2.3.4".parse().unwrap();
+        assert_eq!(zone.upstream.select(ip), "http://127.0.0.1:3000");
+    }
+
+    #[test]
+    fn weighted_round_robin_respects_weights() {
+        let zone = zone_with_upstream(
+            r#"{"targets": [{"url": "http://a:1", "weight": 1}, {"url": "http://b:1", "weight": 3}],
+                "strategy": "round_robin"}"#,
+        );
+        let ip: IpAddr = "1.2.3.4".parse().unwrap();
+        let mut a = 0;
+        let mut b = 0;
+        for _ in 0..8 {
+            match zone.upstream.select(ip) {
+                "http://a:1" => a += 1,
+                "http://b:1" => b += 1,
+                other => panic!("unexpected target {other}"),
+            }
+        }
+        // Weight 1:3 over 8 picks → 2 and 6.
+        assert_eq!((a, b), (2, 6));
+    }
+
+    #[test]
+    fn ip_hash_is_stable_per_client() {
+        let zone = zone_with_upstream(
+            r#"{"targets": [{"url": "http://a:1"}, {"url": "http://b:1"}], "strategy": "ip_hash"}"#,
+        );
+        let ip: IpAddr = "203.0.113.9".parse().unwrap();
+        let first = zone.upstream.select(ip).to_owned();
+        for _ in 0..10 {
+            assert_eq!(zone.upstream.select(ip), first, "same IP must be sticky");
+        }
+    }
+
+    #[test]
+    fn empty_targets_rejected() {
+        let err = Config::from_json(
+            r#"{"zones": [{"name": "z", "hosts": ["*"], "upstream": {"targets": []}, "rules": []}]}"#,
         )
         .unwrap_err();
         assert!(matches!(err, ConfigError::Invalid(_)));

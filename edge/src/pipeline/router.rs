@@ -1,8 +1,8 @@
-//! Stage 3 — forwards `allow` verdicts to the zone's upstream.
+//! Stage 3 — forwards `allow` verdicts to the selected upstream target.
 //!
-//! Load balancing strategies and per-host connection pool tuning come later;
-//! hyper-util's legacy client already pools connections per host, which is
-//! enough for a single upstream per zone.
+//! Target selection (weighted round-robin / IP-hash across a zone's targets)
+//! happens in `config::Upstream::select` before this stage; here we just proxy
+//! to the chosen URL. hyper-util's legacy client pools connections per host.
 
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Body, Bytes, Incoming};

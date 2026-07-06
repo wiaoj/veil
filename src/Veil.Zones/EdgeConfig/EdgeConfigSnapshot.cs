@@ -20,10 +20,21 @@ public sealed record EdgeConfigSnapshot(
 public sealed record EdgeZoneConfig(
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("hosts")] List<string> Hosts,
-    [property: JsonPropertyName("upstream")] string Upstream,
+    // Either a bare URL string (single target) or a structured
+    // EdgeUpstreamConfig (multiple targets + strategy) — the edge accepts both.
+    [property: JsonPropertyName("upstream")] object Upstream,
     [property: JsonPropertyName("rules")] List<EdgeRuleConfig> Rules,
     [property: JsonPropertyName("tls"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     EdgeZoneTlsConfig? Tls = null);
+
+/// <summary>Structured upstream sent when a zone has more than one target.</summary>
+public sealed record EdgeUpstreamConfig(
+    [property: JsonPropertyName("targets")] List<EdgeUpstreamTarget> Targets,
+    [property: JsonPropertyName("strategy")] string Strategy);
+
+public sealed record EdgeUpstreamTarget(
+    [property: JsonPropertyName("url")] string Url,
+    [property: JsonPropertyName("weight")] int Weight);
 
 /// <summary>
 /// TLS material the edge serves for the zone's hosts (SNI). The key is the
@@ -66,12 +77,20 @@ public static class EdgeConfigSnapshotBuilder {
                 continue;
 
             // The edge data plane speaks both http and https to upstreams
-            // (TLS chosen from the URI scheme). A zone with no target at all
-            // cannot be served.
-            UpstreamTarget? target = zone.Upstream.Targets.FirstOrDefault(
-                t => t.Url.Scheme is "http" or "https");
-            if(target is null)
+            // (TLS chosen from the URI scheme). A zone with no servable target
+            // at all cannot be served.
+            List<UpstreamTarget> targets = [.. zone.Upstream.Targets.Where(
+                t => t.Url.Scheme is "http" or "https")];
+            if(targets.Count == 0)
                 continue;
+
+            // Single target → a bare URL string (back-compat); multiple →
+            // structured with the load-balancing strategy. The edge accepts both.
+            object upstream = targets.Count == 1
+                ? targets[0].Url.ToString().TrimEnd('/')
+                : new EdgeUpstreamConfig(
+                    [.. targets.Select(t => new EdgeUpstreamTarget(t.Url.ToString().TrimEnd('/'), t.Weight))],
+                    MapStrategy(zone.Upstream.Strategy));
 
             // A paused zone passes traffic through unfiltered.
             List<EdgeRuleConfig> rules = zone.Status is ZoneStatus.Paused
@@ -84,7 +103,7 @@ public static class EdgeConfigSnapshotBuilder {
             edgeZones.Add(new EdgeZoneConfig(
                 zone.Hostname.Value,
                 [zone.Hostname.Value],
-                target.Url.ToString().TrimEnd('/'),
+                upstream,
                 rules,
                 tls));
         }
@@ -125,6 +144,15 @@ public static class EdgeConfigSnapshotBuilder {
             RuleAction.RateLimit => "rate_limit",
             // The edge has no log action yet.
             _ => null
+        };
+    }
+
+    /// <summary>Snake_case strategy name matching the edge's <c>LbStrategy</c>.</summary>
+    private static string MapStrategy(LoadBalanceStrategy strategy) {
+        return strategy switch {
+            LoadBalanceStrategy.LeastConnections => "least_connections",
+            LoadBalanceStrategy.IpHash => "ip_hash",
+            _ => "round_robin"
         };
     }
 
