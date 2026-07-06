@@ -31,6 +31,48 @@ async fn upstream_handler(req: Request<Incoming>) -> Result<Response<Full<Bytes>
         .unwrap())
 }
 
+/// Counts how many requests reach the caching upstream (to prove cache hits
+/// never forward).
+static CACHE_UPSTREAM_HITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Upstream that returns a cacheable 200 (`Cache-Control: max-age=60`) and
+/// bumps a hit counter, so a test can assert it was contacted only once.
+async fn caching_upstream_handler(_req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
+    CACHE_UPSTREAM_HITS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    Ok(Response::builder()
+        .header("cache-control", "public, max-age=60")
+        .body(Full::new(Bytes::from("cached-body")))
+        .unwrap())
+}
+
+async fn spawn_caching_upstream() -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            tokio::spawn(async move {
+                let _ = auto::Builder::new(TokioExecutor::new())
+                    .serve_connection(TokioIo::new(stream), service_fn(caching_upstream_handler))
+                    .await;
+            });
+        }
+    });
+    addr
+}
+
+/// Proxy with a cache-enabled zone (`"cache": {}`) pointing at `upstream`.
+async fn spawn_proxy_cache(upstream: SocketAddr) -> SocketAddr {
+    let config = Config::from_json(&format!(
+        r#"{{"zones": [{{"name": "c", "hosts": ["*"], "upstream": "http://{upstream}", "cache": {{}}, "rules": []}}]}}"#
+    ))
+    .unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(proxy::serve(listener, Arc::new(AppState::new(config))));
+    addr
+}
+
 async fn spawn_upstream() -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -201,6 +243,34 @@ async fn upstream_down_returns_branded_bad_gateway() {
         response.headers().get("x-veil-error").unwrap(),
         "web_server_down",
         "connection refused must classify as web_server_down",
+    );
+}
+
+#[tokio::test]
+async fn caches_cacheable_response_and_serves_hit() {
+    CACHE_UPSTREAM_HITS.store(0, std::sync::atomic::Ordering::SeqCst);
+    let upstream = spawn_caching_upstream().await;
+    let proxy = spawn_proxy_cache(upstream).await;
+    let client = client();
+
+    // First request → MISS, forwarded to the upstream.
+    let first = get(&client, proxy, "/asset.js").await;
+    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(first.headers().get("x-veil-cache").unwrap(), "MISS");
+    let first_body = first.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(&first_body[..], b"cached-body");
+
+    // Second request → HIT, served from cache without touching the upstream.
+    let second = get(&client, proxy, "/asset.js").await;
+    assert_eq!(second.status(), StatusCode::OK);
+    assert_eq!(second.headers().get("x-veil-cache").unwrap(), "HIT");
+    let second_body = second.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(&second_body[..], b"cached-body");
+
+    assert_eq!(
+        CACHE_UPSTREAM_HITS.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "the upstream must be contacted only once",
     );
 }
 

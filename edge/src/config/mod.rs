@@ -66,6 +66,23 @@ pub struct Zone {
     /// is forwarded. Lets a rule set be validated against live traffic first.
     #[serde(default)]
     pub shadow: bool,
+    /// Opt-in response caching for this zone. Absent → no caching (default).
+    #[serde(default)]
+    pub cache: Option<CacheSettings>,
+}
+
+/// Per-zone response-cache tuning. Its presence enables caching; the cache
+/// itself only stores explicitly-cacheable `GET` responses (see `response_cache`).
+#[derive(Debug, Deserialize)]
+pub struct CacheSettings {
+    /// Largest response body (bytes) to cache. Responses without a
+    /// `Content-Length` or larger than this stream through uncached.
+    #[serde(default = "default_cache_max_body")]
+    pub max_body_bytes: usize,
+}
+
+fn default_cache_max_body() -> usize {
+    1024 * 1024
 }
 
 /// Load-balancing strategy across a zone's upstream targets. Mirrors the

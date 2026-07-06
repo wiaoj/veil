@@ -57,6 +57,9 @@ const CONFIG_PUSH_RATE_WINDOW_SECS: u64 = 60;
 /// inspection; chunked bodies that exceed this mid-read are rejected.
 const MAX_INSPECT_BODY: usize = 256 * 1024;
 
+/// Max distinct entries in the shared response cache (bounded memory).
+const RESPONSE_CACHE_MAX_ENTRIES: usize = 10_000;
+
 pub struct AppState {
     pub config: ConfigStore,
     /// Per-process budget for the public push/ACME endpoints — local DoS
@@ -102,6 +105,9 @@ pub struct AppState {
     pub reputation: Option<crate::reputation::IpReputation>,
     /// Attack-threshold webhook notifier (`VEIL_WEBHOOK_URL`). `None` when unset.
     pub webhook: Option<crate::webhook::WebhookNotifier>,
+    /// Opt-in per-zone response cache (bounded, in-memory). Shared across zones;
+    /// keys are host-scoped so zones never collide.
+    pub response_cache: crate::response_cache::ResponseCache,
 }
 
 impl AppState {
@@ -185,6 +191,7 @@ impl AppState {
             geo: None,
             reputation: None,
             webhook: None,
+            response_cache: crate::response_cache::ResponseCache::new(RESPONSE_CACHE_MAX_ENTRIES),
         }
     }
 }
@@ -486,6 +493,8 @@ pub async fn handle(
         dispatch_forward(source, &ctx, zone.upstream.select(ctx.client_ip), &state).await
     } else {
         match &verdict {
+            Verdict::Allow if zone.cache.is_some() =>
+                dispatch_cached(source, &ctx, zone, &state).await,
             Verdict::Allow => dispatch_forward(source, &ctx, zone.upstream.select(ctx.client_ip), &state).await,
             Verdict::Challenge { .. } => {
                 if state.challenge.verify_token(&ctx.headers, ctx.client_ip) {
@@ -906,5 +915,65 @@ async fn dispatch_forward(
             state.metrics.record_upstream_error(GatewayReason::OriginTimeout.ref_code());
             gateway_error(GatewayReason::OriginTimeout, ctx.wants_html(), ctx.lang())
         }
+    }
+}
+
+/// Forward path with the per-zone response cache in front (only reached when the
+/// zone opted in). Serves a fresh cached copy on a hit; on a miss, forwards and
+/// stores the response when it is explicitly cacheable and within the size cap.
+async fn dispatch_cached(
+    source: ForwardSource,
+    ctx: &crate::pipeline::RequestContext,
+    zone: &crate::config::Zone,
+    state: &AppState,
+) -> Response<ProxyBody> {
+    let cache_cfg = zone.cache.as_ref().expect("dispatch_cached only called when caching is on");
+    let upstream = zone.upstream.select(ctx.client_ip);
+
+    // Only cache plain GETs with no per-user credentials.
+    let cacheable_request = ctx.method == Method::GET
+        && !ctx.headers.contains_key(hyper::header::AUTHORIZATION)
+        && !ctx.headers.contains_key(hyper::header::COOKIE);
+    if !cacheable_request {
+        return dispatch_forward(source, ctx, upstream, state).await;
+    }
+
+    let key = crate::response_cache::key(&ctx.host, &ctx.path, ctx.query.as_deref());
+    if let Some(hit) = state.response_cache.get(&key) {
+        return hit;
+    }
+
+    let response = dispatch_forward(source, ctx, upstream, state).await;
+
+    // Cacheability is decided from headers alone, so a non-cacheable response is
+    // streamed through untouched.
+    let Some(ttl) = crate::response_cache::cacheable_ttl(response.status(), response.headers()) else {
+        return response;
+    };
+    // Only buffer when the length is known and within the cap — a streamed or
+    // oversized body is passed through rather than consumed to fill the cache.
+    let content_length = response
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<usize>().ok());
+    match content_length {
+        Some(len) if len <= cache_cfg.max_body_bytes => {}
+        _ => return response,
+    }
+
+    let status = response.status();
+    let (parts, body) = response.into_parts();
+    match body.collect().await {
+        Ok(collected) => crate::response_cache::store_and_build(
+            &state.response_cache,
+            key,
+            status,
+            &parts.headers,
+            collected.to_bytes(),
+            ttl,
+        ),
+        // The body errored mid-read after we committed to buffering it.
+        Err(_) => text(StatusCode::BAD_GATEWAY, "502 bad gateway\n"),
     }
 }

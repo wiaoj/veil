@@ -9,5 +9,6 @@ pub mod pipeline;
 pub mod proxy;
 pub mod reputation;
 pub mod response;
+pub mod response_cache;
 pub mod webhook;
 pub mod tls;
