@@ -17,6 +17,9 @@ use super::Tier;
 pub struct NonceInfo {
     pub difficulty: u32,
     pub tier: Tier,
+    /// Token lifetime (seconds) to bind into the pass cookie on verify — carried
+    /// on the nonce so the pre-zone verify path honours the zone's setting.
+    pub token_ttl: u32,
 }
 
 // ── trait ─────────────────────────────────────────────────────────────
@@ -120,7 +123,7 @@ mod tests {
     }
 
     fn info(difficulty: u32) -> NonceInfo {
-        NonceInfo { difficulty, tier: Tier::One }
+        NonceInfo { difficulty, tier: Tier::One, token_ttl: 600 }
     }
 
     #[test]
@@ -153,8 +156,8 @@ mod tests {
     fn lookup_tracks_insertion() {
         let s = store();
         assert_eq!(s.lookup("abc123"), None);
-        s.insert("abc123", NonceInfo { difficulty: 22, tier: Tier::Two });
-        assert_eq!(s.lookup("abc123"), Some(NonceInfo { difficulty: 22, tier: Tier::Two }));
+        s.insert("abc123", NonceInfo { difficulty: 22, tier: Tier::Two, token_ttl: 600 });
+        assert_eq!(s.lookup("abc123"), Some(NonceInfo { difficulty: 22, tier: Tier::Two, token_ttl: 600 }));
         s.remove("abc123");
         assert_eq!(s.lookup("abc123"), None);
     }

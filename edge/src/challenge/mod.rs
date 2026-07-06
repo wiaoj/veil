@@ -168,7 +168,11 @@ impl ChallengeEngine {
             .unwrap_or(DEFAULT_TIER2_RISK_THRESHOLD);
         let tier = if risk >= threshold { Tier::Two } else { Tier::One };
 
-        let mut difficulty = risk::difficulty_for(self.difficulty, risk);
+        // Per-zone base difficulty / token TTL override the engine defaults.
+        let base_difficulty = settings.and_then(|s| s.base_difficulty).unwrap_or(self.difficulty);
+        let token_ttl = settings.and_then(|s| s.token_ttl_secs).unwrap_or(self.cookie_ttl);
+
+        let mut difficulty = risk::difficulty_for(base_difficulty, risk);
         if tier == Tier::Two {
             difficulty += TIER2_EXTRA_BITS;
         }
@@ -176,9 +180,10 @@ impl ChallengeEngine {
         let nonce = pow::generate_nonce();
         let nonce_hex = to_hex(&nonce);
 
-        // Track the nonce (replay protection) together with its difficulty and
-        // tier, so verification can't be downgraded below what was issued.
-        self.nonce_store.insert(&nonce_hex, NonceInfo { difficulty, tier });
+        // Track the nonce (replay protection) together with its difficulty, tier
+        // and token TTL, so verification can't be downgraded below what was
+        // issued and the pre-zone verify path honours the zone's token TTL.
+        self.nonce_store.insert(&nonce_hex, NonceInfo { difficulty, tier, token_ttl });
 
         // Visitor-facing copy is localised from Accept-Language / ?locale.
         let lang = ctx.lang();
@@ -271,11 +276,11 @@ impl ChallengeEngine {
             }
         }
 
-        // 6. Issue signed token cookie
-        let token = self.create_token(client_ip, info.tier);
+        // 6. Issue signed token cookie (lifetime bound on the nonce).
+        let token = self.create_token(client_ip, info.tier, info.token_ttl);
         let cookie = format!(
             "{}={}; Path=/; Max-Age={}; SameSite=Lax; HttpOnly",
-            self.cookie_name, token, self.cookie_ttl
+            self.cookie_name, token, info.token_ttl
         );
 
         Response::builder()
@@ -314,12 +319,12 @@ impl ChallengeEngine {
 
     /// Token format: `{payload_hex}.{signature_hex}`
     /// Payload (before hex): `{"ip":"127.0.0.1","exp":1234567890,"tier":1}`
-    fn create_token(&self, client_ip: IpAddr, tier: Tier) -> String {
+    fn create_token(&self, client_ip: IpAddr, tier: Tier, token_ttl: u32) -> String {
         let expiry = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock before unix epoch")
             .as_secs()
-            + u64::from(self.cookie_ttl);
+            + u64::from(token_ttl);
 
         let payload_json =
             format!(r#"{{"ip":"{}","exp":{},"tier":{}}}"#, client_ip, expiry, tier.as_u8());

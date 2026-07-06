@@ -213,6 +213,14 @@ pub struct ChallengeSettings {
     /// Risk score (`0..=100`) at or above which the Tier 2 interaction
     /// challenge is served instead of the Tier 1 PoW page.
     pub tier2_risk_threshold: u8,
+    /// Per-zone base PoW difficulty (leading zero bits) before risk scaling.
+    /// Absent → the engine default (`VEIL_POW_DIFFICULTY`).
+    #[serde(default)]
+    pub base_difficulty: Option<u32>,
+    /// Per-zone pass-token lifetime, seconds. Absent → the engine default
+    /// (`VEIL_CHALLENGE_TTL`).
+    #[serde(default)]
+    pub token_ttl_secs: Option<u32>,
 }
 
 /// Managed signature rule set toggles (Phase 8.x). Each category enables a
@@ -541,6 +549,22 @@ mod tests {
         for _ in 0..10 {
             assert_eq!(zone.upstream.select(ip), first, "same IP must be sticky");
         }
+    }
+
+    #[test]
+    fn challenge_settings_parse_with_overrides() {
+        let zone = zone_with_upstream(r#""http://h:1""#);
+        assert!(zone.challenge.is_none());
+
+        let config = Config::from_json(
+            r#"{"zones": [{"name": "z", "hosts": ["*"], "upstream": "http://h:1", "rules": [],
+                "challenge": {"tier2_risk_threshold": 80, "base_difficulty": 24, "token_ttl_secs": 300}}]}"#,
+        )
+        .unwrap();
+        let ch = config.zones[0].challenge.unwrap();
+        assert_eq!(ch.tier2_risk_threshold, 80);
+        assert_eq!(ch.base_difficulty, Some(24));
+        assert_eq!(ch.token_ttl_secs, Some(300));
     }
 
     #[test]

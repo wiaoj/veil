@@ -10,7 +10,7 @@ use behavior::BehaviorTelemetry;
 use nonce_store::{InMemoryNonceStore, NonceInfo};
 
 fn t1(difficulty: u32) -> NonceInfo {
-    NonceInfo { difficulty, tier: Tier::One }
+    NonceInfo { difficulty, tier: Tier::One, token_ttl: 600 }
 }
 
 fn human_behavior() -> BehaviorTelemetry {
@@ -59,21 +59,21 @@ fn test_engine() -> ChallengeEngine {
 #[test]
 fn token_roundtrip_same_ip() {
     let engine = test_engine();
-    let token = engine.create_token(ip(), Tier::One);
+    let token = engine.create_token(ip(), Tier::One, 600);
     assert!(engine.validate_token(&token, ip()));
 }
 
 #[test]
 fn token_rejected_for_different_ip() {
     let engine = test_engine();
-    let token = engine.create_token(ip(), Tier::One);
+    let token = engine.create_token(ip(), Tier::One, 600);
     assert!(!engine.validate_token(&token, other_ip()));
 }
 
 #[test]
 fn token_rejected_when_tampered() {
     let engine = test_engine();
-    let token = engine.create_token(ip(), Tier::One);
+    let token = engine.create_token(ip(), Tier::One, 600);
     // Flip a character in the signature part
     let tampered = format!("{}X", &token[..token.len() - 1]);
     assert!(!engine.validate_token(&tampered, ip()));
@@ -90,7 +90,7 @@ fn token_rejected_when_malformed() {
 #[test]
 fn verify_token_from_cookie_header() {
     let engine = test_engine();
-    let token = engine.create_token(ip(), Tier::One);
+    let token = engine.create_token(ip(), Tier::One, 600);
     let mut headers = HeaderMap::new();
     headers.insert(
         COOKIE,
@@ -214,7 +214,7 @@ fn tier2_solved(engine: &ChallengeEngine) -> (String, u64) {
     let nonce_hex = pow::to_hex(&nonce);
     engine
         .nonce_store
-        .insert(&nonce_hex, NonceInfo { difficulty: 8, tier: Tier::Two });
+        .insert(&nonce_hex, NonceInfo { difficulty: 8, tier: Tier::Two, token_ttl: 600 });
     let counter = (0..100_000u64)
         .find(|&c| pow::verify_pow(&nonce, c, 8))
         .expect("should find solution at difficulty 8");

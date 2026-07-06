@@ -35,9 +35,12 @@ public sealed record EdgeZoneConfig(
     [property: JsonPropertyName("challenge"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     EdgeChallengeConfig? Challenge = null);
 
-/// <summary>Per-zone challenge knob the edge consumes: the Tier-2 risk threshold.</summary>
+/// <summary>Per-zone challenge knobs the edge consumes: Tier-2 risk threshold,
+/// base PoW difficulty and pass-token lifetime.</summary>
 public sealed record EdgeChallengeConfig(
-    [property: JsonPropertyName("tier2_risk_threshold")] int Tier2RiskThreshold);
+    [property: JsonPropertyName("tier2_risk_threshold")] int Tier2RiskThreshold,
+    [property: JsonPropertyName("base_difficulty")] int BaseDifficulty,
+    [property: JsonPropertyName("token_ttl_secs")] int TokenTtlSecs);
 
 /// <summary>Presence enables the edge response cache (defaults on the edge side).</summary>
 public sealed record EdgeCacheConfig();
@@ -134,7 +137,10 @@ public static class EdgeConfigSnapshotBuilder {
                 : null;
 
             EdgeChallengeConfig? challenge = zone.Status is not ZoneStatus.Paused && zone.Challenge.Enabled
-                ? new EdgeChallengeConfig(zone.Challenge.RiskThreshold)
+                ? new EdgeChallengeConfig(
+                    zone.Challenge.RiskThreshold,
+                    zone.Challenge.PowDifficulty.Value,
+                    (int)zone.Challenge.TokenTtl.Value.TotalSeconds)
                 : null;
 
             edgeZones.Add(new EdgeZoneConfig(
