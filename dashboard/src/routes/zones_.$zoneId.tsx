@@ -173,6 +173,27 @@ function ZoneDetailPage() {
               : 'Devre dışı'}
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle className="text-sm">Managed WAF</CardTitle>
+            <EditManagedRulesDialog
+              zone={z}
+              busy={busy}
+              onSave={(body) => mutate(() => apiSend(`/v1/zones/${z.id}/managed-rules`, 'PUT', body))}
+            />
+          </CardHeader>
+          <CardContent className="text-muted-foreground text-sm">
+            {z.managedRules.sqlInjection || z.managedRules.xss || z.managedRules.pathTraversal
+              ? `${[
+                  z.managedRules.sqlInjection && 'SQLi',
+                  z.managedRules.xss && 'XSS',
+                  z.managedRules.pathTraversal && 'Path',
+                ]
+                  .filter(Boolean)
+                  .join(', ')} → ${z.managedRules.action}${z.managedRules.inspectBody ? ' · gövde taranıyor' : ''}`
+              : 'Devre dışı'}
+          </CardContent>
+        </Card>
       </div>
 
       <div className="space-y-2">
@@ -436,6 +457,110 @@ function EditChallengeDialog({
             />
             CAPTCHA fallback
           </Label>
+          <DialogFooter>
+            <Button type="submit" disabled={busy}>
+              Kaydet
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function EditManagedRulesDialog({
+  zone,
+  busy,
+  onSave,
+}: {
+  zone: ZoneDetail
+  busy: boolean
+  onSave: (body: unknown) => void
+}) {
+  const m = zone.managedRules
+  const [open, setOpen] = useState(false)
+  const [sqli, setSqli] = useState(m.sqlInjection)
+  const [xss, setXss] = useState(m.xss)
+  const [path, setPath] = useState(m.pathTraversal)
+  const [inspectBody, setInspectBody] = useState(m.inspectBody)
+  const [action, setAction] = useState(m.action)
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    onSave({
+      sqlInjection: sqli,
+      xss,
+      pathTraversal: path,
+      inspectBody,
+      action,
+    })
+    setOpen(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm">
+          <Pencil className="size-3.5" /> Düzenle
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Managed WAF düzenle</DialogTitle>
+          <DialogDescription>
+            OWASP-CRS tarzı yerleşik imza aileleri. İstek satırı, sorgu, header ve (opsiyonel)
+            gövde taranır.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-3">
+          <Label className="cursor-pointer">
+            <input
+              type="checkbox"
+              className="accent-primary size-4"
+              checked={sqli}
+              onChange={(e) => setSqli(e.target.checked)}
+            />
+            SQL Injection
+          </Label>
+          <Label className="cursor-pointer">
+            <input
+              type="checkbox"
+              className="accent-primary size-4"
+              checked={xss}
+              onChange={(e) => setXss(e.target.checked)}
+            />
+            XSS
+          </Label>
+          <Label className="cursor-pointer">
+            <input
+              type="checkbox"
+              className="accent-primary size-4"
+              checked={path}
+              onChange={(e) => setPath(e.target.checked)}
+            />
+            Path Traversal
+          </Label>
+          <Label className="cursor-pointer">
+            <input
+              type="checkbox"
+              className="accent-primary size-4"
+              checked={inspectBody}
+              onChange={(e) => setInspectBody(e.target.checked)}
+            />
+            İstek gövdesini de tara (256 KiB'a kadar)
+          </Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="mr-action">Eşleşme aksiyonu</Label>
+            <select
+              id="mr-action"
+              className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+              value={action}
+              onChange={(e) => setAction(e.target.value)}
+            >
+              <option value="block">block</option>
+              <option value="challenge">challenge</option>
+            </select>
+          </div>
           <DialogFooter>
             <Button type="submit" disabled={busy}>
               Kaydet

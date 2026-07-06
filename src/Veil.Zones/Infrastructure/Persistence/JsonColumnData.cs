@@ -8,6 +8,24 @@ namespace Veil.Zones.Infrastructure.Persistence;
 // validated factories — so these records define the stored JSON layout and
 // rebuild the domain types via their internal Restore factories.
 
+internal sealed record ManagedRulesData(
+    bool SqlInjection,
+    bool Xss,
+    bool PathTraversal,
+    bool InspectBody,
+    ManagedRuleAction Action) {
+
+    public static ManagedRulesData FromDomain(ManagedRulesConfig config) {
+        return new ManagedRulesData(
+            config.SqlInjection, config.Xss, config.PathTraversal, config.InspectBody, config.Action);
+    }
+
+    public ManagedRulesConfig ToDomain() {
+        return ManagedRulesConfig.Restore(
+            this.SqlInjection, this.Xss, this.PathTraversal, this.InspectBody, this.Action);
+    }
+}
+
 internal sealed record UpstreamTargetData(string Url, int Weight);
 
 internal sealed record UpstreamConfigData(

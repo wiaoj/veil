@@ -20,7 +20,15 @@ public sealed record GetZoneResponse(
     UpstreamConfigResponse Upstream,
     ChallengeConfigResponse Challenge,
     List<RuleResponse> Rules,
-    bool CacheEnabled);
+    bool CacheEnabled,
+    ManagedRulesInfo ManagedRules);
+
+public sealed record ManagedRulesInfo(
+    bool SqlInjection,
+    bool Xss,
+    bool PathTraversal,
+    bool InspectBody,
+    string Action);
 
 public sealed class GetZoneEndpoint : IEndpoint {
     public void Map(IEndpointRouteBuilder app) {
@@ -62,7 +70,13 @@ public sealed class GetZoneEndpoint : IEndpoint {
             zone.Upstream.ToResponse(),
             zone.Challenge.ToResponse(),
             zone.Rules.Select(r => r.ToResponse(ruleObfuscator)).ToList(),
-            zone.CacheEnabled);
+            zone.CacheEnabled,
+            new ManagedRulesInfo(
+                zone.ManagedRules.SqlInjection,
+                zone.ManagedRules.Xss,
+                zone.ManagedRules.PathTraversal,
+                zone.ManagedRules.InspectBody,
+                zone.ManagedRules.Action == Veil.Zones.Domain.Enums.ManagedRuleAction.Challenge ? "challenge" : "block"));
 
         return Results.Ok(response);
     }

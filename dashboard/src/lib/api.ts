@@ -213,6 +213,13 @@ export interface ZoneDetail {
   }
   rules: Array<Rule>
   cacheEnabled: boolean
+  managedRules: {
+    sqlInjection: boolean
+    xss: boolean
+    pathTraversal: boolean
+    inspectBody: boolean
+    action: string
+  }
 }
 
 export interface VolumePoint {

@@ -27,10 +27,20 @@ public sealed record EdgeZoneConfig(
     [property: JsonPropertyName("tls"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     EdgeZoneTlsConfig? Tls = null,
     [property: JsonPropertyName("cache"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    EdgeCacheConfig? Cache = null);
+    EdgeCacheConfig? Cache = null,
+    [property: JsonPropertyName("managed_rules"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    EdgeManagedRulesConfig? ManagedRules = null);
 
 /// <summary>Presence enables the edge response cache (defaults on the edge side).</summary>
 public sealed record EdgeCacheConfig();
+
+/// <summary>Managed signature toggles pushed to the edge (snake_case action).</summary>
+public sealed record EdgeManagedRulesConfig(
+    [property: JsonPropertyName("sql_injection")] bool SqlInjection,
+    [property: JsonPropertyName("xss")] bool Xss,
+    [property: JsonPropertyName("path_traversal")] bool PathTraversal,
+    [property: JsonPropertyName("inspect_body")] bool InspectBody,
+    [property: JsonPropertyName("action")] string Action);
 
 /// <summary>Structured upstream sent when a zone has more than one target.</summary>
 public sealed record EdgeUpstreamConfig(
@@ -105,13 +115,24 @@ public static class EdgeConfigSnapshotBuilder {
             EdgeZoneTlsConfig? tls = null;
             certificates?.TryGetValue(zone.Hostname.Value.ToLowerInvariant(), out tls);
 
+            // A paused zone passes through unfiltered → no managed inspection either.
+            EdgeManagedRulesConfig? managed = zone.Status is not ZoneStatus.Paused && zone.ManagedRules.IsActive
+                ? new EdgeManagedRulesConfig(
+                    zone.ManagedRules.SqlInjection,
+                    zone.ManagedRules.Xss,
+                    zone.ManagedRules.PathTraversal,
+                    zone.ManagedRules.InspectBody,
+                    zone.ManagedRules.Action == ManagedRuleAction.Challenge ? "challenge" : "block")
+                : null;
+
             edgeZones.Add(new EdgeZoneConfig(
                 zone.Hostname.Value,
                 [zone.Hostname.Value],
                 upstream,
                 rules,
                 tls,
-                zone.CacheEnabled ? new EdgeCacheConfig() : null));
+                zone.CacheEnabled ? new EdgeCacheConfig() : null,
+                managed));
         }
 
         return new EdgeConfigSnapshot(TrustForwardedHeaders: false, edgeZones);

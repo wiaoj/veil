@@ -51,6 +51,17 @@ public sealed class ZoneConfiguration : IEntityTypeConfiguration<Zone> {
                 v => JsonSerializer.Serialize(ChallengeConfigData.FromDomain(v), JsonSerializerOptions.Default),
                 v => JsonSerializer.Deserialize<ChallengeConfigData>(v, JsonSerializerOptions.Default)!.ToDomain());
 
+        builder.Property(x => x.ManagedRules)
+            .HasColumnName("managed_rules")
+            .HasColumnType("jsonb")
+            .IsRequired()
+            .HasConversion(
+                v => JsonSerializer.Serialize(ManagedRulesData.FromDomain(v), JsonSerializerOptions.Default),
+                v => JsonSerializer.Deserialize<ManagedRulesData>(v, JsonSerializerOptions.Default)!.ToDomain())
+            // Existing rows get the "all off" default.
+            .HasDefaultValueSql(
+                "'{\"SqlInjection\":false,\"Xss\":false,\"PathTraversal\":false,\"InspectBody\":false,\"Action\":0}'::jsonb");
+
         builder.Property(x => x.CacheEnabled)
             .HasColumnName("cache_enabled")
             .HasDefaultValue(false);
