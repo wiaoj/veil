@@ -434,6 +434,8 @@ const CONDITION_TYPES = [
   'path_regex',
   'header',
   'user_agent',
+  'ja3',
+  'ja4',
 ] as const
 
 interface ConditionDraft {

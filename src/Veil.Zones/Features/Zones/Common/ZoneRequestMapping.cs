@@ -96,6 +96,16 @@ public static class ZoneRequestMapping {
                     return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Value));
                 return new UserAgentMatchCondition(request.Value);
 
+            case "ja3":
+                if(string.IsNullOrWhiteSpace(request.Value))
+                    return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Value));
+                return new Ja3MatchCondition(request.Value);
+
+            case "ja4":
+                if(string.IsNullOrWhiteSpace(request.Value))
+                    return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Value));
+                return new Ja4MatchCondition(request.Value);
+
             default:
                 return RuleErrors.ConditionTypeUnknown(request.Type);
         }

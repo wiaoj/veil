@@ -173,8 +173,13 @@ public static class EdgeConfigSnapshotBuilder {
                     c.Mode == PathMatchMode.Exact ? "path_exact" : "path_prefix", c.Pattern),
                 HeaderMatchCondition c => new EdgeConditionConfig("header", c.Value, Name: c.Name),
                 UserAgentMatchCondition c => new EdgeConditionConfig("user_agent_contains", c.Pattern),
-                // country / asn (GeoIP) and path_regex are not implemented on
-                // the edge yet.
+                // GeoIP country + path regex + TLS fingerprints are all enforced
+                // by the edge.
+                CountryMatchCondition c => new EdgeConditionConfig("country", c.CountryCode),
+                PathRegexMatchCondition c => new EdgeConditionConfig("path_regex", c.Regex),
+                Ja3MatchCondition c => new EdgeConditionConfig("ja3", c.Fingerprint),
+                Ja4MatchCondition c => new EdgeConditionConfig("ja4", c.Fingerprint),
+                // ASN has no edge rule condition yet → drop the rule fail-safe.
                 _ => null
             };
 

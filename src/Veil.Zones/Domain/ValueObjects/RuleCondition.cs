@@ -12,7 +12,14 @@ namespace Veil.Zones.Domain.ValueObjects;
 [JsonDerivedType(typeof(IpRangeMatchCondition), "ip_range")]
 [JsonDerivedType(typeof(CountryMatchCondition), "country")]
 [JsonDerivedType(typeof(AsnMatchCondition), "asn")]
-[JsonDerivedType(typeof(PathMatchCondition), "path_match")] // Uses path_prefix/path_exact conceptually, but for deserialization we need one or two. Let's map it. Actually, wait. The type discriminator in Rust is "path_prefix" or "path_exact". If we need dynamic discriminator, `JsonDerivedType` might not be enough for PathMatchCondition if it has two discriminators depending on the mode.
+// Persistence (jsonb) discriminator. This is independent of the edge wire
+// discriminator (`Type`, which is path_prefix/path_exact for a path match).
+[JsonDerivedType(typeof(PathMatchCondition), "path_match")]
+[JsonDerivedType(typeof(PathRegexMatchCondition), "path_regex")]
+[JsonDerivedType(typeof(HeaderMatchCondition), "header")]
+[JsonDerivedType(typeof(UserAgentMatchCondition), "user_agent")]
+[JsonDerivedType(typeof(Ja3MatchCondition), "ja3")]
+[JsonDerivedType(typeof(Ja4MatchCondition), "ja4")]
 public abstract record RuleCondition {
     /// <summary>Edge config serialization'da kullanılan type discriminator.</summary>
     public abstract string Type { get; }
@@ -68,4 +75,16 @@ public sealed record HeaderMatchCondition(string Name, string Value) : RuleCondi
 /// <summary>User-Agent string pattern eşleşmesi (case-insensitive contains).</summary>
 public sealed record UserAgentMatchCondition(string Pattern) : RuleCondition {
     public override string Type => "user_agent";
+}
+
+// ── TLS fingerprint Conditions ───────────────────────────────────────
+
+/// <summary>JA3 TLS istemci parmak izi (MD5 hex) ile eşleşme. Yalnızca HTTPS.</summary>
+public sealed record Ja3MatchCondition(string Fingerprint) : RuleCondition {
+    public override string Type => "ja3";
+}
+
+/// <summary>JA4 TLS istemci parmak izi (FoxIO) ile eşleşme. Yalnızca HTTPS.</summary>
+public sealed record Ja4MatchCondition(string Fingerprint) : RuleCondition {
+    public override string Type => "ja4";
 }

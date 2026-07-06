@@ -21,6 +21,8 @@ public static class ZoneResponseMapping {
             PathRegexMatchCondition c => new RuleConditionResponse("path_regex", c.Regex),
             HeaderMatchCondition c => new RuleConditionResponse("header", c.Value, Name: c.Name),
             UserAgentMatchCondition c => new RuleConditionResponse("user_agent", c.Pattern),
+            Ja3MatchCondition c => new RuleConditionResponse("ja3", c.Fingerprint),
+            Ja4MatchCondition c => new RuleConditionResponse("ja4", c.Fingerprint),
             _ => new RuleConditionResponse(condition.Type)
         };
     }

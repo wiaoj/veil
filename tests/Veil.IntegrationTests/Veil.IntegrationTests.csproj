@@ -20,6 +20,8 @@
   <ItemGroup>
     <!-- Exercises the analytics module's thin data clients against real infra. -->
     <ProjectReference Include="..\..\src\Veil.Analytics\Veil.Analytics.csproj" />
+    <!-- Rule-condition polymorphic (de)serialization used by jsonb persistence. -->
+    <ProjectReference Include="..\..\src\Veil.Zones\Veil.Zones.csproj" />
   </ItemGroup>
 
 </Project>
