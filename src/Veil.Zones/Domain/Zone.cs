@@ -14,6 +14,9 @@ public sealed class Zone : Aggregate<ZoneId> {
     public ManagedRulesConfig ManagedRules { get; private set; } = ManagedRulesConfig.Disabled;
     /// <summary>Opt-in edge response caching (conservative RFC 7234). Off by default.</summary>
     public bool CacheEnabled { get; private set; }
+    /// <summary>Shadow (dry-run) mode: rules are evaluated and logged but not
+    /// enforced — every request is forwarded. Off by default.</summary>
+    public bool Shadow { get; private set; }
     public IReadOnlyList<Rule> Rules => this._rules.AsReadOnly();
     public ZoneStatus Status { get; private set; }
 
@@ -148,6 +151,12 @@ public sealed class Zone : Aggregate<ZoneId> {
 
     public Result<Success> UpdateManagedRules(ManagedRulesConfig managedRules) {
         this.ManagedRules = managedRules;
+        RaiseDomainEvent(new ZoneConfigChangedDomainEvent(this.Id));
+        return Result.Success();
+    }
+
+    public Result<Success> UpdateShadow(bool shadow) {
+        this.Shadow = shadow;
         RaiseDomainEvent(new ZoneConfigChangedDomainEvent(this.Id));
         return Result.Success();
     }

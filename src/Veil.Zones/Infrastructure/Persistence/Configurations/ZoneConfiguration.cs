@@ -66,6 +66,10 @@ public sealed class ZoneConfiguration : IEntityTypeConfiguration<Zone> {
             .HasColumnName("cache_enabled")
             .HasDefaultValue(false);
 
+        builder.Property(x => x.Shadow)
+            .HasColumnName("shadow")
+            .HasDefaultValue(false);
+
         // Rules are mapped in RuleConfiguration
         builder.HasMany(x => x.Rules)
             .WithOne()

@@ -175,6 +175,26 @@ function ZoneDetailPage() {
         </Card>
         <Card>
           <CardHeader className="flex-row items-center justify-between">
+            <CardTitle className="text-sm">Shadow (dry-run)</CardTitle>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() =>
+                mutate(() => apiSend(`/v1/zones/${z.id}/shadow`, 'PUT', { enabled: !z.shadow }))
+              }
+            >
+              {z.shadow ? 'Devre dışı bırak' : 'Etkinleştir'}
+            </Button>
+          </CardHeader>
+          <CardContent className="text-muted-foreground text-sm">
+            {z.shadow
+              ? 'Aktif · kurallar değerlendirilip loglanıyor ama uygulanmıyor'
+              : 'Devre dışı'}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="text-sm">Managed WAF</CardTitle>
             <EditManagedRulesDialog
               zone={z}

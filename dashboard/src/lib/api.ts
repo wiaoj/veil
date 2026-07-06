@@ -213,6 +213,7 @@ export interface ZoneDetail {
   }
   rules: Array<Rule>
   cacheEnabled: boolean
+  shadow: boolean
   managedRules: {
     sqlInjection: boolean
     xss: boolean

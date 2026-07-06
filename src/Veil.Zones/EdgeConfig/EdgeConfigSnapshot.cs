@@ -29,7 +29,9 @@ public sealed record EdgeZoneConfig(
     [property: JsonPropertyName("cache"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     EdgeCacheConfig? Cache = null,
     [property: JsonPropertyName("managed_rules"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    EdgeManagedRulesConfig? ManagedRules = null);
+    EdgeManagedRulesConfig? ManagedRules = null,
+    [property: JsonPropertyName("shadow"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    bool Shadow = false);
 
 /// <summary>Presence enables the edge response cache (defaults on the edge side).</summary>
 public sealed record EdgeCacheConfig();
@@ -132,7 +134,8 @@ public static class EdgeConfigSnapshotBuilder {
                 rules,
                 tls,
                 zone.CacheEnabled ? new EdgeCacheConfig() : null,
-                managed));
+                managed,
+                zone.Shadow));
         }
 
         return new EdgeConfigSnapshot(TrustForwardedHeaders: false, edgeZones);
