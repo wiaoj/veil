@@ -81,6 +81,7 @@ fn matches(condition: &Condition, ctx: &RequestContext, body: Option<&[u8]>) -> 
             .is_some_and(|c| c.eq_ignore_ascii_case(value)),
         Condition::Ja3 { value } => ctx.ja3.as_deref().is_some_and(|j| j == value),
         Condition::Ja4 { value } => ctx.ja4.as_deref().is_some_and(|j| j == value),
+        Condition::Asn { value } => ctx.asn.is_some_and(|a| a.to_string() == *value),
     }
 }
 

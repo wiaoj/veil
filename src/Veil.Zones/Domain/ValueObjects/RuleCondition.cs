@@ -18,6 +18,10 @@ namespace Veil.Zones.Domain.ValueObjects;
 [JsonDerivedType(typeof(PathRegexMatchCondition), "path_regex")]
 [JsonDerivedType(typeof(HeaderMatchCondition), "header")]
 [JsonDerivedType(typeof(UserAgentMatchCondition), "user_agent")]
+[JsonDerivedType(typeof(MethodMatchCondition), "method")]
+[JsonDerivedType(typeof(QueryRegexMatchCondition), "query_regex")]
+[JsonDerivedType(typeof(HeaderRegexMatchCondition), "header_regex")]
+[JsonDerivedType(typeof(BodyRegexMatchCondition), "body_regex")]
 [JsonDerivedType(typeof(Ja3MatchCondition), "ja3")]
 [JsonDerivedType(typeof(Ja4MatchCondition), "ja4")]
 public abstract record RuleCondition {
@@ -75,6 +79,26 @@ public sealed record HeaderMatchCondition(string Name, string Value) : RuleCondi
 /// <summary>User-Agent string pattern eşleşmesi (case-insensitive contains).</summary>
 public sealed record UserAgentMatchCondition(string Pattern) : RuleCondition {
     public override string Type => "user_agent";
+}
+
+/// <summary>HTTP metodu eşleşmesi (case-insensitive, ör. "POST").</summary>
+public sealed record MethodMatchCondition(string Method) : RuleCondition {
+    public override string Type => "method";
+}
+
+/// <summary>Sorgu string'i (query) regex eşleşmesi.</summary>
+public sealed record QueryRegexMatchCondition(string Regex) : RuleCondition {
+    public override string Type => "query_regex";
+}
+
+/// <summary>Belirli bir header değerinde regex eşleşmesi.</summary>
+public sealed record HeaderRegexMatchCondition(string Name, string Regex) : RuleCondition {
+    public override string Type => "header_regex";
+}
+
+/// <summary>İstek gövdesinde regex eşleşmesi (gövde tamponlamasını zorlar).</summary>
+public sealed record BodyRegexMatchCondition(string Regex) : RuleCondition {
+    public override string Type => "body_regex";
 }
 
 // ── TLS fingerprint Conditions ───────────────────────────────────────

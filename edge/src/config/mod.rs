@@ -296,6 +296,9 @@ pub enum Condition {
     /// Matches the client's GeoIP country (ISO 3166-1 alpha-2, e.g. `"TR"`).
     /// Case-insensitive; never matches when no GeoIP database is loaded.
     Country { value: String },
+    /// Matches the client's GeoIP ASN (as a decimal string, e.g. `"64500"`).
+    /// Never matches when no ASN database is loaded.
+    Asn { value: String },
     /// Matches the client's JA3 TLS fingerprint (MD5 hex). Useful for
     /// blocklisting known bot/tooling fingerprints. HTTPS only.
     Ja3 { value: String },

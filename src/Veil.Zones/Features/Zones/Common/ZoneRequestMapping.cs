@@ -96,6 +96,28 @@ public static class ZoneRequestMapping {
                     return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Value));
                 return new UserAgentMatchCondition(request.Value);
 
+            case "method":
+                if(string.IsNullOrWhiteSpace(request.Value))
+                    return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Value));
+                return new MethodMatchCondition(request.Value);
+
+            case "query_regex":
+                if(string.IsNullOrWhiteSpace(request.Value))
+                    return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Value));
+                return new QueryRegexMatchCondition(request.Value);
+
+            case "header_regex":
+                if(string.IsNullOrWhiteSpace(request.Name))
+                    return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Name));
+                if(string.IsNullOrWhiteSpace(request.Value))
+                    return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Value));
+                return new HeaderRegexMatchCondition(request.Name, request.Value);
+
+            case "body_regex":
+                if(string.IsNullOrWhiteSpace(request.Value))
+                    return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Value));
+                return new BodyRegexMatchCondition(request.Value);
+
             case "ja3":
                 if(string.IsNullOrWhiteSpace(request.Value))
                     return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Value));

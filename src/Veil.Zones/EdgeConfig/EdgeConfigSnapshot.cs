@@ -206,10 +206,14 @@ public static class EdgeConfigSnapshotBuilder {
                 // GeoIP country + path regex + TLS fingerprints are all enforced
                 // by the edge.
                 CountryMatchCondition c => new EdgeConditionConfig("country", c.CountryCode),
+                AsnMatchCondition c => new EdgeConditionConfig("asn", c.Asn.ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 PathRegexMatchCondition c => new EdgeConditionConfig("path_regex", c.Regex),
+                MethodMatchCondition c => new EdgeConditionConfig("method", c.Method),
+                QueryRegexMatchCondition c => new EdgeConditionConfig("query_regex", c.Regex),
+                HeaderRegexMatchCondition c => new EdgeConditionConfig("header_regex", c.Regex, Name: c.Name),
+                BodyRegexMatchCondition c => new EdgeConditionConfig("body_regex", c.Regex),
                 Ja3MatchCondition c => new EdgeConditionConfig("ja3", c.Fingerprint),
                 Ja4MatchCondition c => new EdgeConditionConfig("ja4", c.Fingerprint),
-                // ASN has no edge rule condition yet → drop the rule fail-safe.
                 _ => null
             };
 

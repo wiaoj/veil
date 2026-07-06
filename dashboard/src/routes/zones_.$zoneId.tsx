@@ -599,7 +599,11 @@ const CONDITION_TYPES = [
   'asn',
   'path_match',
   'path_regex',
+  'method',
   'header',
+  'header_regex',
+  'query_regex',
+  'body_regex',
   'user_agent',
   'ja3',
   'ja4',
@@ -639,7 +643,7 @@ function AddRuleForm({
     const mapped = conditions.map((c) =>
       c.type === 'asn'
         ? { type: c.type, asn: Number(c.value) }
-        : c.type === 'header'
+        : c.type === 'header' || c.type === 'header_regex'
           ? { type: c.type, name: c.headerName, value: c.value }
           : { type: c.type, value: c.value },
     )
@@ -715,7 +719,7 @@ function AddRuleForm({
                     <option key={t}>{t}</option>
                   ))}
                 </Select>
-                {condition.type === 'header' && (
+                {(condition.type === 'header' || condition.type === 'header_regex') && (
                   <Input
                     required
                     placeholder="Header adı"
