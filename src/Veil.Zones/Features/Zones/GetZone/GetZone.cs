@@ -19,7 +19,8 @@ public sealed record GetZoneResponse(
     string Status,
     UpstreamConfigResponse Upstream,
     ChallengeConfigResponse Challenge,
-    List<RuleResponse> Rules);
+    List<RuleResponse> Rules,
+    bool CacheEnabled);
 
 public sealed class GetZoneEndpoint : IEndpoint {
     public void Map(IEndpointRouteBuilder app) {
@@ -60,7 +61,8 @@ public sealed class GetZoneEndpoint : IEndpoint {
             zone.Status.ToString(),
             zone.Upstream.ToResponse(),
             zone.Challenge.ToResponse(),
-            zone.Rules.Select(r => r.ToResponse(ruleObfuscator)).ToList());
+            zone.Rules.Select(r => r.ToResponse(ruleObfuscator)).ToList(),
+            zone.CacheEnabled);
 
         return Results.Ok(response);
     }

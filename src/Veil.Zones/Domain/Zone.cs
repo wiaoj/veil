@@ -10,6 +10,8 @@ public sealed class Zone : Aggregate<ZoneId> {
     public Hostname Hostname { get; private set; }
     public UpstreamConfig Upstream { get; private set; }
     public ChallengeConfig Challenge { get; private set; }
+    /// <summary>Opt-in edge response caching (conservative RFC 7234). Off by default.</summary>
+    public bool CacheEnabled { get; private set; }
     public IReadOnlyList<Rule> Rules => this._rules.AsReadOnly();
     public ZoneStatus Status { get; private set; }
 
@@ -136,6 +138,12 @@ public sealed class Zone : Aggregate<ZoneId> {
         RaiseDomainEvent(new ZoneConfigChangedDomainEvent(this.Id));
         return Result.Success();
     }
+    public Result<Success> UpdateCache(bool enabled) {
+        this.CacheEnabled = enabled;
+        RaiseDomainEvent(new ZoneConfigChangedDomainEvent(this.Id));
+        return Result.Success();
+    }
+
     public Result<Success> UpdateChallenge(ChallengeConfig challenge) {
         this.Challenge = challenge;
         RaiseDomainEvent(new ZoneConfigChangedDomainEvent(this.Id));

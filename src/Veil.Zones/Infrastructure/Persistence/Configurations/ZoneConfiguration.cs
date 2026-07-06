@@ -51,6 +51,10 @@ public sealed class ZoneConfiguration : IEntityTypeConfiguration<Zone> {
                 v => JsonSerializer.Serialize(ChallengeConfigData.FromDomain(v), JsonSerializerOptions.Default),
                 v => JsonSerializer.Deserialize<ChallengeConfigData>(v, JsonSerializerOptions.Default)!.ToDomain());
 
+        builder.Property(x => x.CacheEnabled)
+            .HasColumnName("cache_enabled")
+            .HasDefaultValue(false);
+
         // Rules are mapped in RuleConfiguration
         builder.HasMany(x => x.Rules)
             .WithOne()

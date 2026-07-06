@@ -151,6 +151,28 @@ function ZoneDetailPage() {
               : 'Devre dışı'}
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle className="text-sm">Önbellek</CardTitle>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() =>
+                mutate(() =>
+                  apiSend(`/v1/zones/${z.id}/cache`, 'PUT', { enabled: !z.cacheEnabled }),
+                )
+              }
+            >
+              {z.cacheEnabled ? 'Devre dışı bırak' : 'Etkinleştir'}
+            </Button>
+          </CardHeader>
+          <CardContent className="text-muted-foreground text-sm">
+            {z.cacheEnabled
+              ? 'Aktif · yalnızca açıkça önbelleklenebilir GET yanıtları (RFC 7234)'
+              : 'Devre dışı'}
+          </CardContent>
+        </Card>
       </div>
 
       <div className="space-y-2">

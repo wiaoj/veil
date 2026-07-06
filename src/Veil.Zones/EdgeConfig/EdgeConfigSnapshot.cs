@@ -25,7 +25,12 @@ public sealed record EdgeZoneConfig(
     [property: JsonPropertyName("upstream")] object Upstream,
     [property: JsonPropertyName("rules")] List<EdgeRuleConfig> Rules,
     [property: JsonPropertyName("tls"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    EdgeZoneTlsConfig? Tls = null);
+    EdgeZoneTlsConfig? Tls = null,
+    [property: JsonPropertyName("cache"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    EdgeCacheConfig? Cache = null);
+
+/// <summary>Presence enables the edge response cache (defaults on the edge side).</summary>
+public sealed record EdgeCacheConfig();
 
 /// <summary>Structured upstream sent when a zone has more than one target.</summary>
 public sealed record EdgeUpstreamConfig(
@@ -105,7 +110,8 @@ public static class EdgeConfigSnapshotBuilder {
                 [zone.Hostname.Value],
                 upstream,
                 rules,
-                tls));
+                tls,
+                zone.CacheEnabled ? new EdgeCacheConfig() : null));
         }
 
         return new EdgeConfigSnapshot(TrustForwardedHeaders: false, edgeZones);

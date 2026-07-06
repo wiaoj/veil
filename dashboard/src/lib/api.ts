@@ -212,6 +212,7 @@ export interface ZoneDetail {
     requireCaptcha: boolean
   }
   rules: Array<Rule>
+  cacheEnabled: boolean
 }
 
 export interface VolumePoint {
