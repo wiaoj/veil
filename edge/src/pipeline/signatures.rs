@@ -171,6 +171,7 @@ mod tests {
             country: None,
             asn: None,
             ja3: None,
+            ja4: None,
         }
     }
 

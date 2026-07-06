@@ -45,6 +45,7 @@ pub fn inspect<B>(req: &Request<B>, peer: SocketAddr, trust_forwarded: bool) -> 
         country: None,
         asn: None,
         ja3: None,
+        ja4: None,
     }
 }
 

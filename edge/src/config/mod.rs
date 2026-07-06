@@ -171,6 +171,9 @@ pub enum Condition {
     /// Matches the client's JA3 TLS fingerprint (MD5 hex). Useful for
     /// blocklisting known bot/tooling fingerprints. HTTPS only.
     Ja3 { value: String },
+    /// Matches the client's JA4 TLS fingerprint (FoxIO). More robust than JA3
+    /// against extension-order randomisation. HTTPS only.
+    Ja4 { value: String },
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

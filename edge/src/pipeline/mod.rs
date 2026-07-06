@@ -30,6 +30,9 @@ pub struct RequestContext {
     /// JA3 TLS client fingerprint (MD5 hex) for HTTPS connections. `None` for
     /// plaintext HTTP or when the ClientHello could not be parsed.
     pub ja3: Option<String>,
+    /// JA4 TLS client fingerprint (FoxIO) for HTTPS connections. `None` for
+    /// plaintext HTTP or when the ClientHello could not be parsed.
+    pub ja4: Option<String>,
 }
 
 impl RequestContext {

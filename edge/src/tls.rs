@@ -7,6 +7,7 @@
 //! [`DynamicCertResolver`] — no listener restart.
 
 pub mod ja3;
+pub mod ja4;
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

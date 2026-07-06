@@ -80,6 +80,7 @@ fn matches(condition: &Condition, ctx: &RequestContext, body: Option<&[u8]>) -> 
             .as_deref()
             .is_some_and(|c| c.eq_ignore_ascii_case(value)),
         Condition::Ja3 { value } => ctx.ja3.as_deref().is_some_and(|j| j == value),
+        Condition::Ja4 { value } => ctx.ja4.as_deref().is_some_and(|j| j == value),
     }
 }
 
@@ -101,6 +102,7 @@ mod tests {
             country: None,
             asn: None,
             ja3: None,
+            ja4: None,
         }
     }
 

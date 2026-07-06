@@ -231,8 +231,8 @@ pub async fn serve_with_shutdown(
                 let state = Arc::clone(&state);
                 let service = service_fn(move |req| {
                     let state = Arc::clone(&state);
-                    // Plaintext HTTP carries no TLS ClientHello → no JA3.
-                    async move { Ok::<_, Infallible>(handle(req, peer, state, None).await) }
+                    // Plaintext HTTP carries no TLS ClientHello → no fingerprints.
+                    async move { Ok::<_, Infallible>(handle(req, peer, state, Fingerprints::default()).await) }
                 });
                 let conn = builder.serve_connection_with_upgrades(TokioIo::new(stream), service);
                 let conn = graceful.watch(conn.into_owned());
@@ -270,8 +270,8 @@ pub async fn serve_tls(
                 let acceptor = acceptor.clone();
                 let state = Arc::clone(&state);
                 // Peek the ClientHello (MSG_PEEK, non-consuming) to compute the
-                // JA3 fingerprint before rustls runs the real handshake.
-                let ja3 = peek_ja3(&stream).await;
+                // JA3/JA4 fingerprints before rustls runs the real handshake.
+                let fp = peek_fingerprints(&stream).await;
                 // Handshake inline; a failed handshake only costs this
                 // connection. Watched connections are tracked for draining.
                 let tls_stream = match acceptor.accept(stream).await {
@@ -283,8 +283,8 @@ pub async fn serve_tls(
                 };
                 let service = service_fn(move |req| {
                     let state = Arc::clone(&state);
-                    let ja3 = ja3.clone();
-                    async move { Ok::<_, Infallible>(handle(req, peer, state, ja3).await) }
+                    let fp = fp.clone();
+                    async move { Ok::<_, Infallible>(handle(req, peer, state, fp).await) }
                 });
                 let conn = builder.serve_connection_with_upgrades(TokioIo::new(tls_stream), service);
                 let conn = graceful.watch(conn.into_owned());
@@ -317,7 +317,7 @@ pub async fn handle(
     req: Request<Incoming>,
     peer: SocketAddr,
     state: Arc<AppState>,
-    ja3: Option<String>,
+    fp: Fingerprints,
 ) -> Response<ProxyBody> {
     let started = Instant::now();
     let ts_ms = analytics::now_ms();
@@ -325,7 +325,8 @@ pub async fn handle(
     // never affect a request mid-flight.
     let config = state.config.load();
     let mut ctx = inspector::inspect(&req, peer, config.trust_forwarded_headers);
-    ctx.ja3 = ja3;
+    ctx.ja3 = fp.ja3;
+    ctx.ja4 = fp.ja4;
     if let Some(geo) = &state.geo {
         let info = geo.lookup(ctx.client_ip);
         ctx.country = info.country;
@@ -843,14 +844,28 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     left.iter().zip(right).fold(0u8, |acc, (l, r)| acc | (l ^ r)) == 0
 }
 
+/// TLS client fingerprints computed from the peeked ClientHello. Empty for
+/// plaintext HTTP (no ClientHello).
+#[derive(Debug, Clone, Default)]
+pub struct Fingerprints {
+    pub ja3: Option<String>,
+    pub ja4: Option<String>,
+}
+
 /// Peeks the TLS ClientHello off the socket (without consuming it, so rustls
-/// still completes the handshake) and computes the JA3 fingerprint. A single
-/// peek captures the ClientHello in the common case; a truncated or unparsable
-/// record simply yields `None`.
-async fn peek_ja3(stream: &TcpStream) -> Option<String> {
+/// still completes the handshake) and computes the JA3 + JA4 fingerprints. A
+/// single peek captures the ClientHello in the common case; a truncated or
+/// unparsable record simply yields `None` for each.
+async fn peek_fingerprints(stream: &TcpStream) -> Fingerprints {
     let mut buf = [0u8; 2048];
-    let n = stream.peek(&mut buf).await.ok()?;
-    crate::tls::ja3::from_tls_record(&buf[..n]).map(|j| j.hash)
+    let Ok(n) = stream.peek(&mut buf).await else {
+        return Fingerprints::default();
+    };
+    let record = &buf[..n];
+    Fingerprints {
+        ja3: crate::tls::ja3::from_tls_record(record).map(|j| j.hash),
+        ja4: crate::tls::ja4::from_tls_record(record).map(|j| j.value),
+    }
 }
 
 /// The request body to forward upstream: either streamed straight from the

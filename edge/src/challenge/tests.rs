@@ -44,6 +44,7 @@ fn ctx() -> crate::pipeline::RequestContext {
         country: None,
         asn: None,
         ja3: None,
+        ja4: None,
     }
 }
 
