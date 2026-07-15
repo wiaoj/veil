@@ -39,6 +39,7 @@ public sealed class ConfigSyncService(
     TimeProvider timeProvider,
     Veil.Shared.Observability.MetricsCollector metrics,
     IPushCoordinator coordinator,
+    IEdgeNodeLocator locator,
     IOptions<ConfigSyncOptions> options,
     ILogger<ConfigSyncService> logger) : BackgroundService {
 
@@ -56,8 +57,14 @@ public sealed class ConfigSyncService(
     private static readonly TimeSpan[] RetryDelays =
         [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)];
 
-    /// <summary>Per-node hash of the last successfully pushed snapshot.</summary>
-    private readonly Dictionary<long, string> _lastPushedHash = [];
+    /// <summary>
+    /// Hash of the last snapshot successfully pushed, keyed by *address* rather
+    /// than by node: one registered node can resolve to many addresses (a
+    /// Kubernetes DaemonSet is one identity across N pods), and each of them has
+    /// to be tracked separately or a new pod would be skipped as "already
+    /// current". Pruned each sweep to the set of live addresses.
+    /// </summary>
+    private readonly Dictionary<string, string> _lastPushedHash = [];
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
         byte[]? pushKey = ReadPushKey();
@@ -155,44 +162,88 @@ public sealed class ConfigSyncService(
             .ToListAsync(cancellationToken);
 
         bool wroteLog = false;
+        HashSet<string> liveAddresses = [];
+
         foreach(EdgeNode node in nodes) {
             long nodeKey = node.Id.Value.Value;
-            if(this._lastPushedHash.TryGetValue(nodeKey, out string? pushed) && pushed == snapshotHash)
-                continue;
 
-            (bool succeeded, string? error) = await PushToNodeAsync(node, json, signature, cancellationToken);
+            // Identity comes from the database; location is resolved now, because
+            // in a dynamic fleet the address recorded at registration is stale the
+            // moment a pod is rescheduled.
+            IReadOnlyList<Uri> addresses = await locator.ResolveAsync(node, cancellationToken);
+            if(addresses.Count == 0) {
+                logger.LogWarning("No address resolved for edge node {Node}; skipping this sweep", node.Name);
+                continue;
+            }
+
+            bool allSucceeded = true;
+            bool attemptedAny = false;
+            string? firstError = null;
+
+            foreach(Uri address in addresses) {
+                string addressKey = address.ToString();
+                liveAddresses.Add(addressKey);
+
+                if(this._lastPushedHash.TryGetValue(addressKey, out string? pushed) && pushed == snapshotHash)
+                    continue;   // this address already holds this snapshot
+
+                attemptedAny = true;
+                (bool ok, string? error) = await PushToAddressAsync(address, json, signature, cancellationToken);
+
+                if(ok) {
+                    this._lastPushedHash[addressKey] = snapshotHash;
+                }
+                else {
+                    this._lastPushedHash.Remove(addressKey);
+                    allSucceeded = false;
+                    firstError ??= $"{address}: {error}";
+                }
+            }
+
+            if(!attemptedAny)
+                continue;   // every address was already up to date
 
             nodesDb.ConfigPushLogs.Add(ConfigPushLog.Record(
-                node.Id, succeeded, Truncate(error, 2048), timeProvider.GetUtcNow()));
+                node.Id, allSucceeded, Truncate(firstError, 2048), timeProvider.GetUtcNow()));
             wroteLog = true;
 
             metrics.IncrementCounter(PushTotal, "Config push attempts to edge nodes, by result.",
-                labels: ("result", succeeded ? "success" : "failure"));
+                labels: ("result", allSucceeded ? "success" : "failure"));
 
-            if(succeeded) {
-                this._lastPushedHash[nodeKey] = snapshotHash;
+            if(allSucceeded) {
                 node.MarkSeen(timeProvider.GetUtcNow());
                 await coordinator.ClearRetryAsync(nodeKey, cancellationToken);
-                logger.LogInformation("Config pushed to edge node {Node} ({Address})", node.Name, node.Address);
+                logger.LogInformation(
+                    "Config pushed to edge node {Node} ({Count} address(es))", node.Name, addresses.Count);
             }
             else {
+                // Any address left behind means the node as a whole is not
+                // converged — retry the node, and the per-address dedupe above
+                // keeps the ones that did succeed from being pushed again.
                 await coordinator.EnqueueRetryAsync(nodeKey, cancellationToken);
                 logger.LogWarning(
-                    "Config push to edge node {Node} ({Address}) failed after {Attempts} attempts: {Error}",
-                    node.Name, node.Address, RetryDelays.Length, error);
+                    "Config push to edge node {Node} failed after {Attempts} attempts: {Error}",
+                    node.Name, RetryDelays.Length, firstError);
             }
+        }
+
+        // Addresses that no longer resolve (a pod went away) must not linger in
+        // the dedupe map — otherwise it grows without bound across pod churn.
+        if(liveAddresses.Count > 0) {
+            foreach(string stale in this._lastPushedHash.Keys.Where(k => !liveAddresses.Contains(k)).ToList())
+                this._lastPushedHash.Remove(stale);
         }
 
         if(wroteLog)
             await nodesDb.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<(bool Succeeded, string? Error)> PushToNodeAsync(
-        EdgeNode node,
+    private async Task<(bool Succeeded, string? Error)> PushToAddressAsync(
+        Uri address,
         string json,
         string signature,
         CancellationToken cancellationToken) {
-        string url = node.Address.ToString().TrimEnd('/') + this._options.PushPath;
+        string url = address.ToString().TrimEnd('/') + this._options.PushPath;
         HttpClient client = httpClientFactory.CreateClient(HttpClientName);
         string? lastError = null;
 

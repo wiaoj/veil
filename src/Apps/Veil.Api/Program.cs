@@ -124,6 +124,31 @@ else {
 }
 builder.Services.Configure<ConfigSyncOptions>(
     builder.Configuration.GetSection(ConfigSyncOptions.SectionName));
+
+// Node identity lives in PostgreSQL; where that node currently *is* depends on
+// the deployment. Static (VMs/compose) uses the registered address; Dns resolves
+// a Kubernetes headless Service to every ready pod; Redis reads TTL'd
+// self-registrations for dynamic non-Kubernetes fleets.
+DiscoveryMode discoveryMode = builder.Configuration
+    .GetSection(ConfigSyncOptions.SectionName)
+    .GetSection(nameof(ConfigSyncOptions.Discovery))
+    .GetValue(nameof(DiscoveryOptions.Mode), DiscoveryMode.Static);
+
+switch(discoveryMode) {
+    case DiscoveryMode.Dns:
+        builder.Services.AddSingleton<IEdgeNodeLocator, DnsEdgeNodeLocator>();
+        break;
+    case DiscoveryMode.Redis when !string.IsNullOrWhiteSpace(configSyncRedis):
+        builder.Services.AddSingleton<IEdgeNodeLocator, RedisEdgeNodeLocator>();
+        break;
+    case DiscoveryMode.Redis:
+        throw new InvalidOperationException(
+            "ConfigSync:Discovery:Mode is Redis but ConfigSync:RedisConnection is not set.");
+    default:
+        builder.Services.AddSingleton<IEdgeNodeLocator, StaticEdgeNodeLocator>();
+        break;
+}
+
 builder.Services.AddHttpClient(ConfigSyncService.HttpClientName,
     client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHostedService<ConfigSyncService>();

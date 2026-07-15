@@ -14,7 +14,8 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.1.0" />
     <PackageReference Include="Testcontainers.ClickHouse" Version="4.1.0" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+    <PackageReference Include="Testcontainers.Redis" Version="4.1.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.7" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,6 +23,8 @@
     <ProjectReference Include="..\..\src\Veil.Analytics\Veil.Analytics.csproj" />
     <!-- Rule-condition polymorphic (de)serialization used by jsonb persistence. -->
     <ProjectReference Include="..\..\src\Veil.Zones\Veil.Zones.csproj" />
+    <!-- ConfigSync edge-node locators (identity vs. location resolution). -->
+    <ProjectReference Include="..\..\src\Apps\Veil.Api\Veil.Api.csproj" />
   </ItemGroup>
 
 </Project>

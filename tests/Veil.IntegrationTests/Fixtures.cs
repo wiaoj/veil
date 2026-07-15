@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.ClickHouse;
 using Testcontainers.PostgreSql;
+using Testcontainers.Redis;
 using Xunit;
 
 namespace Veil.IntegrationTests;
@@ -46,3 +47,18 @@ public sealed class ClickHouseFixture : IAsyncLifetime {
 
 [CollectionDefinition(nameof(ClickHouseCollection))]
 public sealed class ClickHouseCollection : ICollectionFixture<ClickHouseFixture>;
+
+/// <summary>Spins up a throwaway Redis once per test collection.</summary>
+public sealed class RedisFixture : IAsyncLifetime {
+    private readonly RedisContainer _container = new RedisBuilder()
+        .WithImage("redis:7-alpine")
+        .Build();
+
+    public string ConnectionString => this._container.GetConnectionString();
+
+    public Task InitializeAsync() => this._container.StartAsync();
+    public Task DisposeAsync() => this._container.DisposeAsync().AsTask();
+}
+
+[CollectionDefinition(nameof(RedisCollection))]
+public sealed class RedisCollection : ICollectionFixture<RedisFixture>;
