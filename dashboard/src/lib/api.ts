@@ -62,6 +62,32 @@ export class UnauthorizedError extends Error {
   }
 }
 
+/**
+ * Non-2xx (non-401) API failure. Carries the status code and the parsed error
+ * body so callers can distinguish cases (e.g. 503 = schema registry disabled)
+ * and surface the server's own message (e.g. Vaultify's rejection reason).
+ */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: unknown,
+    path: string,
+  ) {
+    super(`API ${status}: ${path}`)
+  }
+}
+
+async function readError(response: Response, path: string): Promise<ApiError> {
+  let body: unknown = null
+  try {
+    const text = await response.text()
+    body = text.length > 0 ? JSON.parse(text) : null
+  } catch {
+    body = null
+  }
+  return new ApiError(response.status, body, path)
+}
+
 /** Authenticated GET with a single refresh-and-retry on 401. */
 export async function apiGet<T>(path: string): Promise<T> {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -74,7 +100,7 @@ export async function apiGet<T>(path: string): Promise<T> {
       clearSession()
       throw new UnauthorizedError()
     }
-    if (!response.ok) throw new Error(`API ${response.status}: ${path}`)
+    if (!response.ok) throw await readError(response, path)
     return (await response.json()) as T
   }
   throw new UnauthorizedError()
@@ -101,7 +127,7 @@ export async function apiSend<T = unknown>(
       clearSession()
       throw new UnauthorizedError()
     }
-    if (!response.ok) throw new Error(`API ${response.status}: ${path}`)
+    if (!response.ok) throw await readError(response, path)
     if (response.status === 204) return null
     const text = await response.text()
     return text.length > 0 ? (JSON.parse(text) as T) : null
@@ -428,4 +454,61 @@ export async function applyAiRule(
   })
   if (result === null) throw new Error('Boş yanıt.')
   return result
+}
+
+// ── Schema registry (Vaultify-backed) ────────────────────────────────
+
+// Subject/version list items are proxied straight from Vaultify (its HATEOAS
+// envelope unwrapped to `data`), so exact field names aren't guaranteed — the
+// schemas route normalizes them defensively. Kept as open records for that.
+export type SchemaSubject = {
+  subject?: string
+  name?: string
+  latestVersion?: string
+  version?: string
+  type?: string
+  [key: string]: unknown
+}
+
+export type SchemaVersion = {
+  version?: string
+  createdAt?: string
+  createdAtUtc?: string
+  type?: string
+  [key: string]: unknown
+}
+
+/** Compatibility pre-check outcome. `compatible` is null when the registry
+ * could not be reached (the upload isn't blocked on it). */
+export interface SchemaCompatibilityResponse {
+  compatible: boolean | null
+  detail: string | null
+}
+
+/** A rule that references a schema subject, with a link back to its zone. */
+export interface SchemaUsageItem {
+  zoneId: string
+  hostname: string
+  ruleId: string
+  ruleName: string
+  versions: string
+}
+
+export interface SchemaUsageResponse {
+  subject: string
+  items: Array<SchemaUsageItem>
+}
+
+/** Normalizes a proxied subject entry to the fields the UI needs. */
+export function subjectName(s: SchemaSubject): string {
+  return s.subject ?? s.name ?? ''
+}
+
+export function subjectLatestVersion(s: SchemaSubject): string | null {
+  return s.latestVersion ?? s.version ?? null
+}
+
+/** Normalizes a proxied version entry's identifier. */
+export function versionId(v: SchemaVersion): string {
+  return v.version ?? ''
 }

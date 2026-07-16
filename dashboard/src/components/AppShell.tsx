@@ -2,6 +2,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import {
   Activity,
   Brain,
+  FileJson,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -25,6 +26,7 @@ import {
 const NAV = [
   { to: '/', label: 'Genel bakış', icon: LayoutDashboard },
   { to: '/zones', label: "Zone'lar", icon: ShieldCheck },
+  { to: '/schemas', label: 'Şemalar', icon: FileJson },
   { to: '/nodes', label: "Edge node'lar", icon: Server },
   { to: '/certificates', label: 'Sertifikalar', icon: Radio },
   { to: '/live', label: 'Canlı trafik', icon: Activity },
