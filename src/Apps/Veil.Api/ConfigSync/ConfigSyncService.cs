@@ -40,6 +40,7 @@ public sealed class ConfigSyncService(
     Veil.Shared.Observability.MetricsCollector metrics,
     IPushCoordinator coordinator,
     IEdgeNodeLocator locator,
+    Veil.Api.Schemas.ISchemaRegistry schemaRegistry,
     IOptions<ConfigSyncOptions> options,
     ILogger<ConfigSyncService> logger) : BackgroundService {
 
@@ -150,7 +151,8 @@ public sealed class ConfigSyncService(
             .ToListAsync(cancellationToken);
 
         EdgeConfigSnapshot snapshot = EdgeConfigSnapshotBuilder.Build(zones, ruleObfuscator,
-            await certificateProvider.GetActiveCertificatesAsync(cancellationToken));
+            await certificateProvider.GetActiveCertificatesAsync(cancellationToken),
+            await ResolveSchemasAsync(zones, cancellationToken));
         string json = JsonSerializer.Serialize(snapshot);
         byte[] jsonBytes = Encoding.UTF8.GetBytes(json);
         string snapshotHash = Sha256Hash.Compute(jsonBytes).ToHexString().ToLower();
@@ -237,6 +239,48 @@ public sealed class ConfigSyncService(
         if(wroteLog)
             await nodesDb.SaveChangesAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Resolves every distinct <c>body_schema</c> reference used by any rule to
+    /// its concrete schema from the registry (Vaultify), so the snapshot builder
+    /// can embed it. A reference that fails to resolve is simply left out — the
+    /// builder then drops that rule fail-open rather than shipping validation the
+    /// edge can't perform.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, JsonElement>> ResolveSchemasAsync(
+        IReadOnlyList<Zone> zones, CancellationToken cancellationToken) {
+        if(!schemaRegistry.IsEnabled)
+            return EmptySchemas;
+
+        HashSet<Schemas.SchemaRef> refs = [.. zones
+            .SelectMany(z => z.Rules)
+            .SelectMany(r => r.Conditions)
+            .OfType<BodySchemaMatchCondition>()
+            .Select(c => new Schemas.SchemaRef(c.Subject, c.Version))];
+
+        if(refs.Count == 0)
+            return EmptySchemas;
+
+        Dictionary<string, JsonElement> resolved = [];
+        foreach(Schemas.SchemaRef reference in refs) {
+            string? raw = await schemaRegistry.ResolveRawAsync(reference, cancellationToken);
+            if(raw is null)
+                continue;
+            try {
+                using JsonDocument doc = JsonDocument.Parse(raw);
+                resolved[EdgeConfigSnapshotBuilder.SchemaKey(reference.Subject, reference.Version)] =
+                    doc.RootElement.Clone();
+            }
+            catch(JsonException ex) {
+                logger.LogWarning(ex, "Resolved schema {Subject}@{Version} is not valid JSON",
+                    reference.Subject, reference.Version);
+            }
+        }
+        return resolved;
+    }
+
+    private static readonly IReadOnlyDictionary<string, JsonElement> EmptySchemas =
+        new Dictionary<string, JsonElement>();
 
     private async Task<(bool Succeeded, string? Error)> PushToAddressAsync(
         Uri address,

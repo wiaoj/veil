@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Veil.Shared;
 using Veil.Zones.Domain;
@@ -86,7 +87,11 @@ public sealed record EdgeConditionConfig(
     [property: JsonPropertyName("name"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? Name = null,
     [property: JsonPropertyName("path"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? Path = null);
+    string? Path = null,
+    // The concrete JSON Schema, resolved from the registry at snapshot time and
+    // embedded so the edge validates offline (body_schema conditions only).
+    [property: JsonPropertyName("schema"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    JsonElement? Schema = null);
 
 public sealed record EdgeRateLimitConfig(
     [property: JsonPropertyName("requests")] int Requests,
@@ -95,10 +100,14 @@ public sealed record EdgeRateLimitConfig(
 public static class EdgeConfigSnapshotBuilder {
     /// <param name="certificates">Active TLS material keyed by hostname
     /// (lowercase); zones without an entry are served plaintext.</param>
+    /// <summary>Key format for the resolved-schema map: <c>subject@version</c>.</summary>
+    public static string SchemaKey(string subject, string version) => $"{subject}@{version}";
+
     public static EdgeConfigSnapshot Build(
         IReadOnlyList<Zone> zones,
         IObfuscator<RuleId> ruleObfuscator,
-        IReadOnlyDictionary<string, EdgeZoneTlsConfig>? certificates = null) {
+        IReadOnlyDictionary<string, EdgeZoneTlsConfig>? certificates = null,
+        IReadOnlyDictionary<string, JsonElement>? resolvedSchemas = null) {
         List<EdgeZoneConfig> edgeZones = [];
 
         foreach(Zone zone in zones) {
@@ -124,7 +133,7 @@ public static class EdgeConfigSnapshotBuilder {
             // A paused zone passes traffic through unfiltered.
             List<EdgeRuleConfig> rules = zone.Status is ZoneStatus.Paused
                 ? []
-                : MapRules(zone, ruleObfuscator);
+                : MapRules(zone, ruleObfuscator, resolvedSchemas);
 
             EdgeZoneTlsConfig? tls = null;
             certificates?.TryGetValue(zone.Hostname.Value.ToLowerInvariant(), out tls);
@@ -162,7 +171,9 @@ public static class EdgeConfigSnapshotBuilder {
         return new EdgeConfigSnapshot(TrustForwardedHeaders: false, edgeZones);
     }
 
-    private static List<EdgeRuleConfig> MapRules(Zone zone, IObfuscator<RuleId> ruleObfuscator) {
+    private static List<EdgeRuleConfig> MapRules(
+        Zone zone, IObfuscator<RuleId> ruleObfuscator,
+        IReadOnlyDictionary<string, JsonElement>? resolvedSchemas) {
         List<EdgeRuleConfig> rules = [];
 
         foreach(Rule rule in zone.Rules.Where(r => r.IsEnabled).OrderBy(r => r.Priority)) {
@@ -170,7 +181,7 @@ public static class EdgeConfigSnapshotBuilder {
             if(action is null)
                 continue;
 
-            List<EdgeConditionConfig>? conditions = MapConditions(rule.Conditions);
+            List<EdgeConditionConfig>? conditions = MapConditions(rule.Conditions, resolvedSchemas);
             if(conditions is null)
                 continue;
 
@@ -198,6 +209,15 @@ public static class EdgeConfigSnapshotBuilder {
         };
     }
 
+    private static EdgeConditionConfig? ResolveSchemaCondition(
+        BodySchemaMatchCondition c, IReadOnlyDictionary<string, JsonElement>? resolvedSchemas) {
+        if(resolvedSchemas is null)
+            return null;
+        return resolvedSchemas.TryGetValue(SchemaKey(c.Subject, c.Version), out JsonElement schema)
+            ? new EdgeConditionConfig("body_schema", Value: string.Empty, Schema: schema)
+            : null;
+    }
+
     /// <summary>Snake_case strategy name matching the edge's <c>LbStrategy</c>.</summary>
     private static string MapStrategy(LoadBalanceStrategy strategy) {
         return strategy switch {
@@ -212,7 +232,9 @@ public static class EdgeConfigSnapshotBuilder {
     /// are AND-ed, so dropping one would make the rule fire more broadly than
     /// configured — the only safe degradation is dropping the whole rule.
     /// </summary>
-    private static List<EdgeConditionConfig>? MapConditions(IReadOnlyList<RuleCondition> conditions) {
+    private static List<EdgeConditionConfig>? MapConditions(
+        IReadOnlyList<RuleCondition> conditions,
+        IReadOnlyDictionary<string, JsonElement>? resolvedSchemas) {
         List<EdgeConditionConfig> mapped = [];
 
         foreach(RuleCondition condition in conditions) {
@@ -234,6 +256,11 @@ public static class EdgeConfigSnapshotBuilder {
                 HeaderRegexMatchCondition c => new EdgeConditionConfig("header_regex", c.Regex, Name: c.Name),
                 BodyRegexMatchCondition c => new EdgeConditionConfig("body_regex", c.Regex),
                 BodyJsonMatchCondition c => new EdgeConditionConfig("body_json", c.Regex, Path: c.Path),
+                // Embed the concrete schema resolved from the registry. When it
+                // couldn't be resolved (registry down / schema deleted) the rule
+                // is dropped fail-open by the `edge is null` check below — better
+                // to skip validation than to break the snapshot or block traffic.
+                BodySchemaMatchCondition c => ResolveSchemaCondition(c, resolvedSchemas),
                 Ja3MatchCondition c => new EdgeConditionConfig("ja3", c.Fingerprint),
                 Ja4MatchCondition c => new EdgeConditionConfig("ja4", c.Fingerprint),
                 _ => null

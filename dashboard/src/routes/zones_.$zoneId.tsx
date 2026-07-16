@@ -630,6 +630,7 @@ const CONDITION_TYPES = [
   'query_regex',
   'body_regex',
   'body_json',
+  'body_schema',
   'user_agent',
   'ja3',
   'ja4',
@@ -640,10 +641,12 @@ interface ConditionDraft {
   value: string
   headerName: string
   path: string
+  subject: string
+  version: string
 }
 
 function newCondition(): ConditionDraft {
-  return { type: 'path_match', value: '', headerName: '', path: '' }
+  return { type: 'path_match', value: '', headerName: '', path: '', subject: '', version: '' }
 }
 
 function AddRuleForm({
@@ -674,7 +677,9 @@ function AddRuleForm({
           ? { type: c.type, name: c.headerName, value: c.value }
           : c.type === 'body_json'
             ? { type: c.type, path: c.path, value: c.value }
-            : { type: c.type, value: c.value },
+            : c.type === 'body_schema'
+              ? { type: c.type, subject: c.subject, version: c.version }
+              : { type: c.type, value: c.value },
     )
     onAdd({
       name,
@@ -766,19 +771,38 @@ function AddRuleForm({
                     className="w-40 font-mono"
                   />
                 )}
-                <Input
-                  required
-                  placeholder={
-                    condition.type === 'asn'
-                      ? 'ASN (ör. 64500)'
-                      : condition.type === 'body_json'
-                        ? 'Regex'
-                        : 'Değer'
-                  }
-                  value={condition.value}
-                  onChange={(e) => patch(index, { value: e.target.value })}
-                  className="w-48 font-mono"
-                />
+                {condition.type === 'body_schema' ? (
+                  <>
+                    <Input
+                      required
+                      placeholder="Şema subject"
+                      value={condition.subject}
+                      onChange={(e) => patch(index, { subject: e.target.value })}
+                      className="w-40 font-mono"
+                    />
+                    <Input
+                      required
+                      placeholder="Versiyon (ör. 1.0.0)"
+                      value={condition.version}
+                      onChange={(e) => patch(index, { version: e.target.value })}
+                      className="w-32 font-mono"
+                    />
+                  </>
+                ) : (
+                  <Input
+                    required
+                    placeholder={
+                      condition.type === 'asn'
+                        ? 'ASN (ör. 64500)'
+                        : condition.type === 'body_json'
+                          ? 'Regex'
+                          : 'Değer'
+                    }
+                    value={condition.value}
+                    onChange={(e) => patch(index, { value: e.target.value })}
+                    className="w-48 font-mono"
+                  />
+                )}
                 {conditions.length > 1 && (
                   <button
                     type="button"

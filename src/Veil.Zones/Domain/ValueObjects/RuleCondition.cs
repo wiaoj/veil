@@ -23,6 +23,7 @@ namespace Veil.Zones.Domain.ValueObjects;
 [JsonDerivedType(typeof(HeaderRegexMatchCondition), "header_regex")]
 [JsonDerivedType(typeof(BodyRegexMatchCondition), "body_regex")]
 [JsonDerivedType(typeof(BodyJsonMatchCondition), "body_json")]
+[JsonDerivedType(typeof(BodySchemaMatchCondition), "body_schema")]
 [JsonDerivedType(typeof(Ja3MatchCondition), "ja3")]
 [JsonDerivedType(typeof(Ja4MatchCondition), "ja4")]
 public abstract record RuleCondition {
@@ -106,6 +107,13 @@ public sealed record BodyRegexMatchCondition(string Regex) : RuleCondition {
 /// (`$.user.name`). Tüm gövdeyi taramaktan çok daha az yanlış pozitif üretir.</summary>
 public sealed record BodyJsonMatchCondition(string Path, string Regex) : RuleCondition {
     public override string Type => "body_json";
+}
+
+/// <summary>Pozitif doğrulama: gövdeyi şema kayıt defterindeki (Vaultify) bir
+/// şemaya karşı doğrular. Kural yalnızca REFERANSI taşır; somut şema snapshot
+/// üretilirken çözülür. Uymayan gövde reddedilir.</summary>
+public sealed record BodySchemaMatchCondition(string Subject, string Version) : RuleCondition {
+    public override string Type => "body_schema";
 }
 
 // ── TLS fingerprint Conditions ───────────────────────────────────────

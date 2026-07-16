@@ -151,6 +151,23 @@ switch(discoveryMode) {
 
 builder.Services.AddHttpClient(ConfigSyncService.HttpClientName,
     client => client.Timeout = TimeSpan.FromSeconds(10));
+
+// Schema registry (Vaultify) — the store behind body_schema positive validation.
+// Uploads register + validate there; the concrete schema is resolved into the
+// snapshot at push time. Unset Vaultify:BaseUrl → the feature is off.
+builder.Services.Configure<Veil.Api.Schemas.VaultifyOptions>(
+    builder.Configuration.GetSection(Veil.Api.Schemas.VaultifyOptions.SectionName));
+string? vaultifyUrl = builder.Configuration
+    .GetSection(Veil.Api.Schemas.VaultifyOptions.SectionName)[nameof(Veil.Api.Schemas.VaultifyOptions.BaseUrl)];
+if(!string.IsNullOrWhiteSpace(vaultifyUrl)) {
+    builder.Services.AddHttpClient(Veil.Api.Schemas.VaultifySchemaRegistry.HttpClientName,
+        client => client.Timeout = TimeSpan.FromSeconds(10));
+    builder.Services.AddSingleton<Veil.Api.Schemas.ISchemaRegistry, Veil.Api.Schemas.VaultifySchemaRegistry>();
+}
+else {
+    builder.Services.AddSingleton<Veil.Api.Schemas.ISchemaRegistry, Veil.Api.Schemas.DisabledSchemaRegistry>();
+}
+
 builder.Services.AddHostedService<ConfigSyncService>();
 
 // ACME: provisions/renews certificates, publishing HTTP-01 challenges to
@@ -174,6 +191,7 @@ Veil.Api.Internal.EdgeConfigEndpoints.Map(app);
 
 // Dashboard-facing proxy to the analytics worker's live AI incident feed.
 Veil.Api.Internal.IntelligenceEndpoints.Map(app);
+Veil.Api.Schemas.SchemaEndpoints.Map(app);
 
 // Tyto RPC endpoints — AI rule application (ApplyAiRuleHandler). Behind the
 // default auth policy, so callers must present a valid API key.

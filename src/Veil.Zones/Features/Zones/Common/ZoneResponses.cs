@@ -32,7 +32,9 @@ public sealed record RuleConditionResponse(
     string? Name = null,
     int? Asn = null,
     string? Mode = null,
-    string? Path = null);
+    string? Path = null,
+    string? Subject = null,
+    string? Version = null);
 
 public sealed record RateLimitResponse(int Requests, int WindowSecs);
 

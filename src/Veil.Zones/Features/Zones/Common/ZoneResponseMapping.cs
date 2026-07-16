@@ -26,6 +26,7 @@ public static class ZoneResponseMapping {
             HeaderRegexMatchCondition c => new RuleConditionResponse("header_regex", c.Regex, Name: c.Name),
             BodyRegexMatchCondition c => new RuleConditionResponse("body_regex", c.Regex),
             BodyJsonMatchCondition c => new RuleConditionResponse("body_json", c.Regex, Path: c.Path),
+            BodySchemaMatchCondition c => new RuleConditionResponse("body_schema", Subject: c.Subject, Version: c.Version),
             Ja3MatchCondition c => new RuleConditionResponse("ja3", c.Fingerprint),
             Ja4MatchCondition c => new RuleConditionResponse("ja4", c.Fingerprint),
             _ => new RuleConditionResponse(condition.Type)
