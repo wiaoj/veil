@@ -204,7 +204,7 @@ impl Zone {
                 .rules
                 .iter()
                 .flat_map(|r| &r.conditions)
-                .any(|c| matches!(c, Condition::BodyRegex { .. }))
+                .any(|c| matches!(c, Condition::BodyRegex { .. } | Condition::BodyJson { .. }))
     }
 }
 
@@ -240,6 +240,12 @@ pub struct ManagedRules {
     /// What to do on a signature match.
     #[serde(default)]
     pub action: ManagedAction,
+    /// When `inspect_body` is on, reject bodies larger than the inspection cap
+    /// instead of forwarding them un-inspected. Closes the "pad the payload past
+    /// the cap to skip the WAF" bypass, at the cost of blocking legitimately
+    /// large uploads — so it is opt-in.
+    #[serde(default)]
+    pub block_oversized_body: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
@@ -301,6 +307,13 @@ pub enum Condition {
     HeaderRegex { name: String, value: CompiledRegex },
     /// Regex over the request body. Forces body buffering for the zone.
     BodyRegex { value: CompiledRegex },
+    /// Regex over a single field of a JSON request body, selected by a dotted
+    /// path (`"$.user.name"` / `"user.name"`). Only matches when the body parses
+    /// as JSON and the field is a string/number. Forces body buffering.
+    BodyJson {
+        path: String,
+        value: CompiledRegex,
+    },
     /// Matches the client's GeoIP country (ISO 3166-1 alpha-2, e.g. `"TR"`).
     /// Case-insensitive; never matches when no GeoIP database is loaded.
     Country { value: String },

@@ -28,6 +28,7 @@ public sealed class RuleConditionSerializationTests {
             new QueryRegexMatchCondition("(?i)union.*select"),
             new HeaderRegexMatchCondition("Referer", "evil\\.com"),
             new BodyRegexMatchCondition("<script"),
+            new BodyJsonMatchCondition("$.comment", "(?i)<script"),
             new Ja3MatchCondition("e7d705a3286e19ea42f587b344ee6865"),
             new Ja4MatchCondition("t13d1516h2_8daaf6152771_b186095e22b6"),
         ];
@@ -40,9 +41,11 @@ public sealed class RuleConditionSerializationTests {
         // Types survive the round-trip (discriminators resolve back to subtypes).
         Assert.IsType<MethodMatchCondition>(restored[8]);
         Assert.IsType<HeaderRegexMatchCondition>(restored[10]);
-        Assert.IsType<Ja3MatchCondition>(restored[12]);
-        Assert.IsType<Ja4MatchCondition>(restored[13]);
-        Assert.Equal("t13d1516h2_8daaf6152771_b186095e22b6", ((Ja4MatchCondition)restored[13]).Fingerprint);
+        Assert.IsType<BodyJsonMatchCondition>(restored[12]);
+        Assert.Equal("$.comment", ((BodyJsonMatchCondition)restored[12]).Path);
+        Assert.IsType<Ja3MatchCondition>(restored[13]);
+        Assert.IsType<Ja4MatchCondition>(restored[14]);
+        Assert.Equal("t13d1516h2_8daaf6152771_b186095e22b6", ((Ja4MatchCondition)restored[14]).Fingerprint);
         Assert.Equal("secret", ((HeaderMatchCondition)restored[6]).Value);
     }
 }

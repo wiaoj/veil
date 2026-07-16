@@ -29,7 +29,8 @@ public sealed record ManagedRulesInfo(
     bool Xss,
     bool PathTraversal,
     bool InspectBody,
-    string Action);
+    string Action,
+    bool BlockOversizedBody);
 
 public sealed class GetZoneEndpoint : IEndpoint {
     public void Map(IEndpointRouteBuilder app) {
@@ -77,7 +78,8 @@ public sealed class GetZoneEndpoint : IEndpoint {
                 zone.ManagedRules.Xss,
                 zone.ManagedRules.PathTraversal,
                 zone.ManagedRules.InspectBody,
-                zone.ManagedRules.Action == Veil.Zones.Domain.Enums.ManagedRuleAction.Challenge ? "challenge" : "block"),
+                zone.ManagedRules.Action == Veil.Zones.Domain.Enums.ManagedRuleAction.Challenge ? "challenge" : "block",
+                zone.ManagedRules.BlockOversizedBody),
             zone.Shadow);
 
         return Results.Ok(response);

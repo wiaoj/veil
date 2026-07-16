@@ -22,6 +22,7 @@ namespace Veil.Zones.Domain.ValueObjects;
 [JsonDerivedType(typeof(QueryRegexMatchCondition), "query_regex")]
 [JsonDerivedType(typeof(HeaderRegexMatchCondition), "header_regex")]
 [JsonDerivedType(typeof(BodyRegexMatchCondition), "body_regex")]
+[JsonDerivedType(typeof(BodyJsonMatchCondition), "body_json")]
 [JsonDerivedType(typeof(Ja3MatchCondition), "ja3")]
 [JsonDerivedType(typeof(Ja4MatchCondition), "ja4")]
 public abstract record RuleCondition {
@@ -99,6 +100,12 @@ public sealed record HeaderRegexMatchCondition(string Name, string Regex) : Rule
 /// <summary>İstek gövdesinde regex eşleşmesi (gövde tamponlamasını zorlar).</summary>
 public sealed record BodyRegexMatchCondition(string Regex) : RuleCondition {
     public override string Type => "body_regex";
+}
+
+/// <summary>JSON gövdesinde tek bir alanda regex eşleşmesi. `Path` noktalı
+/// (`$.user.name`). Tüm gövdeyi taramaktan çok daha az yanlış pozitif üretir.</summary>
+public sealed record BodyJsonMatchCondition(string Path, string Regex) : RuleCondition {
+    public override string Type => "body_json";
 }
 
 // ── TLS fingerprint Conditions ───────────────────────────────────────

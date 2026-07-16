@@ -75,6 +75,10 @@ fn matches(condition: &Condition, ctx: &RequestContext, body: Option<&[u8]>) -> 
         Condition::BodyRegex { value } => {
             body.is_some_and(|b| value.0.is_match(&String::from_utf8_lossy(b)))
         }
+        Condition::BodyJson { path, value } => body
+            .and_then(json_field)
+            .and_then(|json| lookup_json_path(&json, path))
+            .is_some_and(|field| value.0.is_match(&field)),
         Condition::Country { value } => ctx
             .country
             .as_deref()
@@ -82,6 +86,32 @@ fn matches(condition: &Condition, ctx: &RequestContext, body: Option<&[u8]>) -> 
         Condition::Ja3 { value } => ctx.ja3.as_deref().is_some_and(|j| j == value),
         Condition::Ja4 { value } => ctx.ja4.as_deref().is_some_and(|j| j == value),
         Condition::Asn { value } => ctx.asn.is_some_and(|a| a.to_string() == *value),
+    }
+}
+
+/// Parses the body as JSON. Only successful parses of an already-buffered body
+/// (≤ the inspection cap) are handled, so there is no unbounded-input risk here;
+/// serde_json also rejects pathologically deep nesting on its own.
+fn json_field(body: &[u8]) -> Option<serde_json::Value> {
+    serde_json::from_slice(body).ok()
+}
+
+/// Resolves a dotted path (`"$.user.name"`, `"user.name"`) to a scalar field and
+/// returns it as a string for regex matching. Objects/arrays/null yield `None`
+/// (there is nothing to match a string pattern against).
+fn lookup_json_path(root: &serde_json::Value, path: &str) -> Option<String> {
+    let mut current = root;
+    for segment in path.trim_start_matches("$.").trim_start_matches('.').split('.') {
+        if segment.is_empty() {
+            continue;
+        }
+        current = current.get(segment)?;
+    }
+    match current {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
     }
 }
 
@@ -223,5 +253,42 @@ mod tests {
             evaluate(&zone, &c, &limiter, None).await,
             Verdict::Block { rule_id: "geo".into() }
         );
+    }
+
+    #[tokio::test]
+    async fn body_json_matches_only_the_targeted_field() {
+        let zone = zone(
+            r#"[{"id": "js", "priority": 1, "action": "block",
+                 "conditions": [{"type": "body_json", "path": "$.comment", "value": "(?i)<script"}]}]"#,
+        );
+        let limiter = RateLimiter::in_memory();
+        let c = ctx("1.1.1.1", "/comment");
+
+        // Payload in the targeted field → blocked.
+        let hit = br#"{"user":"ok","comment":"<script>x</script>"}"#;
+        assert_eq!(
+            evaluate(&zone, &c, &limiter, Some(hit)).await,
+            Verdict::Block { rule_id: "js".into() }
+        );
+
+        // Same payload, but in a *different* field → no match. This is the point
+        // of field-level rules: far fewer false positives than scanning the whole
+        // body, and it can't be tripped by content in an unrelated field.
+        let miss = br#"{"user":"<script>x</script>","comment":"hi"}"#;
+        assert_eq!(evaluate(&zone, &c, &limiter, Some(miss)).await, Verdict::Allow);
+
+        // Non-JSON body → never matches.
+        assert_eq!(evaluate(&zone, &c, &limiter, Some(b"not json")).await, Verdict::Allow);
+    }
+
+    #[test]
+    fn json_path_reads_nested_scalars() {
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"a":{"b":{"c":"deep"},"n":42},"s":"x"}"#).unwrap();
+        assert_eq!(lookup_json_path(&v, "$.a.b.c"), Some("deep".into()));
+        assert_eq!(lookup_json_path(&v, "a.n"), Some("42".into()));
+        assert_eq!(lookup_json_path(&v, "s"), Some("x".into()));
+        assert_eq!(lookup_json_path(&v, "a.b"), None);      // object, not a scalar
+        assert_eq!(lookup_json_path(&v, "missing"), None);
     }
 }

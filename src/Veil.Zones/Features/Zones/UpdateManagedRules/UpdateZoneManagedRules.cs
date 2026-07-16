@@ -17,14 +17,16 @@ public sealed record ManagedRulesRequest(
     bool Xss,
     bool PathTraversal,
     bool InspectBody,
-    string Action = "block");
+    string Action = "block",
+    bool BlockOversizedBody = false);
 
 public sealed record ManagedRulesResponse(
     bool SqlInjection,
     bool Xss,
     bool PathTraversal,
     bool InspectBody,
-    string Action);
+    string Action,
+    bool BlockOversizedBody);
 
 public sealed class UpdateZoneManagedRulesEndpoint : IEndpoint {
     public void Map(IEndpointRouteBuilder app) {
@@ -53,7 +55,7 @@ public sealed class UpdateZoneManagedRulesEndpoint : IEndpoint {
             _ => ManagedRuleAction.Block
         };
         ManagedRulesConfig managed = ManagedRulesConfig.Create(
-            req.SqlInjection, req.Xss, req.PathTraversal, req.InspectBody, action);
+            req.SqlInjection, req.Xss, req.PathTraversal, req.InspectBody, req.BlockOversizedBody, action);
 
         await using ZonesDbContext dbContext = await dbFactory.CreateDbContextAsync(cancellationToken);
 
@@ -72,6 +74,7 @@ public sealed class UpdateZoneManagedRulesEndpoint : IEndpoint {
 
         return Results.Ok(new ManagedRulesResponse(
             managed.SqlInjection, managed.Xss, managed.PathTraversal, managed.InspectBody,
-            managed.Action == ManagedRuleAction.Challenge ? "challenge" : "block"));
+            managed.Action == ManagedRuleAction.Challenge ? "challenge" : "block",
+            managed.BlockOversizedBody));
     }
 }

@@ -13,28 +13,32 @@ public sealed class ManagedRulesConfig {
     public bool PathTraversal { get; }
     /// <summary>Buffer + scan the request body in addition to URL/headers.</summary>
     public bool InspectBody { get; }
+    /// <summary>Reject bodies larger than the inspection cap instead of forwarding
+    /// them un-inspected (closes the "pad past the cap to skip the WAF" bypass).</summary>
+    public bool BlockOversizedBody { get; }
     public ManagedRuleAction Action { get; }
 
     /// <summary>True when at least one signature family is active.</summary>
     public bool IsActive => this.SqlInjection || this.Xss || this.PathTraversal;
 
     /// <summary>No managed inspection.</summary>
-    public static ManagedRulesConfig Disabled => new(false, false, false, false, ManagedRuleAction.Block);
+    public static ManagedRulesConfig Disabled => new(false, false, false, false, false, ManagedRuleAction.Block);
 
-    private ManagedRulesConfig(bool sqlInjection, bool xss, bool pathTraversal, bool inspectBody, ManagedRuleAction action) {
+    private ManagedRulesConfig(bool sqlInjection, bool xss, bool pathTraversal, bool inspectBody, bool blockOversizedBody, ManagedRuleAction action) {
         this.SqlInjection = sqlInjection;
         this.Xss = xss;
         this.PathTraversal = pathTraversal;
         this.InspectBody = inspectBody;
+        this.BlockOversizedBody = blockOversizedBody;
         this.Action = action;
     }
 
     public static ManagedRulesConfig Create(
-        bool sqlInjection, bool xss, bool pathTraversal, bool inspectBody, ManagedRuleAction action) =>
-        new(sqlInjection, xss, pathTraversal, inspectBody, action);
+        bool sqlInjection, bool xss, bool pathTraversal, bool inspectBody, bool blockOversizedBody, ManagedRuleAction action) =>
+        new(sqlInjection, xss, pathTraversal, inspectBody, blockOversizedBody, action);
 
     /// <summary>Persistence-only factory for previously validated data.</summary>
     internal static ManagedRulesConfig Restore(
-        bool sqlInjection, bool xss, bool pathTraversal, bool inspectBody, ManagedRuleAction action) =>
-        new(sqlInjection, xss, pathTraversal, inspectBody, action);
+        bool sqlInjection, bool xss, bool pathTraversal, bool inspectBody, bool blockOversizedBody, ManagedRuleAction action) =>
+        new(sqlInjection, xss, pathTraversal, inspectBody, blockOversizedBody, action);
 }

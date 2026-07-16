@@ -517,6 +517,7 @@ function EditManagedRulesDialog({
   const [xss, setXss] = useState(m.xss)
   const [path, setPath] = useState(m.pathTraversal)
   const [inspectBody, setInspectBody] = useState(m.inspectBody)
+  const [blockOversized, setBlockOversized] = useState(m.blockOversizedBody)
   const [action, setAction] = useState(m.action)
 
   function submit(e: React.FormEvent) {
@@ -527,6 +528,7 @@ function EditManagedRulesDialog({
       pathTraversal: path,
       inspectBody,
       action,
+      blockOversizedBody: blockOversized,
     })
     setOpen(false)
   }
@@ -583,6 +585,15 @@ function EditManagedRulesDialog({
             />
             İstek gövdesini de tara (256 KiB'a kadar)
           </Label>
+          <Label className="cursor-pointer">
+            <input
+              type="checkbox"
+              className="accent-primary size-4"
+              checked={blockOversized}
+              onChange={(e) => setBlockOversized(e.target.checked)}
+            />
+            Denetlenemeyen büyük gövdeleri reddet (WAF bypass'ını kapatır)
+          </Label>
           <div className="space-y-1.5">
             <Label htmlFor="mr-action">Eşleşme aksiyonu</Label>
             <select
@@ -618,6 +629,7 @@ const CONDITION_TYPES = [
   'header_regex',
   'query_regex',
   'body_regex',
+  'body_json',
   'user_agent',
   'ja3',
   'ja4',
@@ -627,10 +639,11 @@ interface ConditionDraft {
   type: string
   value: string
   headerName: string
+  path: string
 }
 
 function newCondition(): ConditionDraft {
-  return { type: 'path_match', value: '', headerName: '' }
+  return { type: 'path_match', value: '', headerName: '', path: '' }
 }
 
 function AddRuleForm({
@@ -659,7 +672,9 @@ function AddRuleForm({
         ? { type: c.type, asn: Number(c.value) }
         : c.type === 'header' || c.type === 'header_regex'
           ? { type: c.type, name: c.headerName, value: c.value }
-          : { type: c.type, value: c.value },
+          : c.type === 'body_json'
+            ? { type: c.type, path: c.path, value: c.value }
+            : { type: c.type, value: c.value },
     )
     onAdd({
       name,
@@ -742,9 +757,24 @@ function AddRuleForm({
                     className="w-40"
                   />
                 )}
+                {condition.type === 'body_json' && (
+                  <Input
+                    required
+                    placeholder="JSON alanı (ör. $.comment)"
+                    value={condition.path}
+                    onChange={(e) => patch(index, { path: e.target.value })}
+                    className="w-40 font-mono"
+                  />
+                )}
                 <Input
                   required
-                  placeholder={condition.type === 'asn' ? 'ASN (ör. 64500)' : 'Değer'}
+                  placeholder={
+                    condition.type === 'asn'
+                      ? 'ASN (ör. 64500)'
+                      : condition.type === 'body_json'
+                        ? 'Regex'
+                        : 'Değer'
+                  }
                   value={condition.value}
                   onChange={(e) => patch(index, { value: e.target.value })}
                   className="w-48 font-mono"

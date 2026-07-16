@@ -57,7 +57,8 @@ public sealed record RuleConditionRequest(
     string? Value = null,
     string? Name = null,
     int? Asn = null,
-    string? Mode = null);
+    string? Mode = null,
+    string? Path = null);
 
 /// <summary>
 /// Rate limit parameters for rules with the RateLimit action.

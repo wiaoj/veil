@@ -412,7 +412,15 @@ pub async fn handle(
         *req.method(),
         Method::POST | Method::PUT | Method::PATCH | Method::DELETE
     );
+    // When a body is scanned, inspect its decoded form (gzip/deflate) so a
+    // compressed payload can't hide from the signatures. `inspect` shadows the
+    // forwarded bytes and is used only for scanning.
     let mut buffered: Option<Bytes> = None;
+    let mut inspect: Option<Vec<u8>> = None;
+    let block_oversized = zone
+        .managed_rules
+        .as_ref()
+        .is_some_and(|m| m.inspect_body && m.block_oversized_body);
     let source = if zone.needs_body_inspection() && body_method {
         let declared = req
             .headers()
@@ -420,13 +428,31 @@ pub async fn handle(
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<usize>().ok());
         if declared.is_some_and(|n| n > MAX_INSPECT_BODY) {
+            // Too big to inspect. Either forward un-inspected (default) or, when
+            // the zone opts in, reject — so padding a payload past the cap can't
+            // be used to slip past the WAF.
+            if block_oversized {
+                let response = json_response(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    r#"{"error":"body_too_large","detail":"Request body exceeds the inspection limit."}"#,
+                );
+                state.metrics.record_request("block", started.elapsed().as_secs_f64());
+                record_request(&state, &ctx, &zone.name, "block", Some("oversized_body".to_owned()), response.status().as_u16(), ts_ms, started);
+                return response;
+            }
             warn!(client_ip = %ctx.client_ip, "body exceeds inspection cap; forwarding without body inspection");
             ForwardSource::Stream(req)
         } else {
+            let encoding = req
+                .headers()
+                .get(hyper::header::CONTENT_ENCODING)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned);
             let (parts, incoming) = req.into_parts();
             match Limited::new(incoming, MAX_INSPECT_BODY).collect().await {
                 Ok(collected) => {
                     let bytes = collected.to_bytes();
+                    inspect = signatures::decode_for_inspection(encoding.as_deref(), &bytes, MAX_INSPECT_BODY);
                     buffered = Some(bytes.clone());
                     ForwardSource::Buffered(parts, bytes)
                 }
@@ -446,7 +472,9 @@ pub async fn handle(
     } else {
         ForwardSource::Stream(req)
     };
-    let body_slice = buffered.as_deref();
+    // Prefer the decoded body for inspection; fall back to the raw buffered bytes
+    // when it was not compressed.
+    let body_slice = inspect.as_deref().or(buffered.as_deref());
 
     // Custom rules first; if they allow, the managed signature set runs as a
     // second phase over the URL, headers and (when buffered) the body.

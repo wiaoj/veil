@@ -13,16 +13,19 @@ internal sealed record ManagedRulesData(
     bool Xss,
     bool PathTraversal,
     bool InspectBody,
-    ManagedRuleAction Action) {
+    ManagedRuleAction Action,
+    bool BlockOversizedBody = false) {
 
     public static ManagedRulesData FromDomain(ManagedRulesConfig config) {
         return new ManagedRulesData(
-            config.SqlInjection, config.Xss, config.PathTraversal, config.InspectBody, config.Action);
+            config.SqlInjection, config.Xss, config.PathTraversal, config.InspectBody,
+            config.Action, config.BlockOversizedBody);
     }
 
     public ManagedRulesConfig ToDomain() {
         return ManagedRulesConfig.Restore(
-            this.SqlInjection, this.Xss, this.PathTraversal, this.InspectBody, this.Action);
+            this.SqlInjection, this.Xss, this.PathTraversal, this.InspectBody,
+            this.BlockOversizedBody, this.Action);
     }
 }
 

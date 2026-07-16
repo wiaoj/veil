@@ -13,7 +13,7 @@
 
 use std::sync::OnceLock;
 
-use hyper::header::{COOKIE, REFERER, USER_AGENT};
+use hyper::header::{AUTHORIZATION, PROXY_AUTHORIZATION};
 use regex::RegexSet;
 
 use crate::config::ManagedRules;
@@ -83,13 +83,19 @@ pub fn scan(
 ) -> Option<&'static str> {
     let s = sets();
 
-    let mut targets: Vec<String> = Vec::with_capacity(8);
+    let mut targets: Vec<String> = Vec::with_capacity(16);
     push_target(&mut targets, &ctx.path);
     if let Some(q) = &ctx.query {
         push_target(&mut targets, q);
     }
-    for name in [USER_AGENT, REFERER, COOKIE] {
-        if let Some(v) = ctx.headers.get(name).and_then(|v| v.to_str().ok()) {
+    // Scan every request header, not a hand-picked few — an injection can ride
+    // any of them (X-Forwarded-For, custom API headers, …). Credential headers
+    // are skipped: a token is opaque and would only produce false positives.
+    for (name, value) in &ctx.headers {
+        if name == AUTHORIZATION || name == PROXY_AUTHORIZATION {
+            continue;
+        }
+        if let Ok(v) = value.to_str() {
             targets.push(v.to_owned());
         }
     }
@@ -109,6 +115,40 @@ pub fn scan(
         }
     }
     None
+}
+
+/// Decompresses a request body for inspection when it is `gzip`/`deflate`
+/// encoded, so signatures see the plaintext a compressed payload would otherwise
+/// hide. Returns `None` when the body is not compressed (the caller inspects the
+/// raw bytes) or cannot be decoded.
+///
+/// **Decompression bomb defence:** decoding is bounded to `cap` bytes via a
+/// `take` limiter — a 1 KB gzip that expands to 1 GB stops at the cap instead of
+/// exhausting memory. The original (still-compressed) body is always what is
+/// forwarded upstream; this copy exists only to be scanned.
+pub fn decode_for_inspection(encoding: Option<&str>, body: &[u8], cap: usize) -> Option<Vec<u8>> {
+    use std::io::Read;
+
+    let encoding = encoding?.to_ascii_lowercase();
+    let mut out = Vec::new();
+
+    let read_result = if encoding.contains("gzip") {
+        flate2::read::GzDecoder::new(body).take(cap as u64).read_to_end(&mut out)
+    }
+    else if encoding.contains("deflate") {
+        flate2::read::ZlibDecoder::new(body).take(cap as u64).read_to_end(&mut out)
+    }
+    else {
+        return None;   // unknown/absent encoding → inspect the raw body
+    };
+
+    // A truncated-at-cap read still yields useful bytes to scan; only a hard
+    // decode error (corrupt stream) is discarded.
+    match read_result {
+        Ok(_) => Some(out),
+        Err(_) if !out.is_empty() => Some(out),
+        Err(_) => None,
+    }
 }
 
 /// Pushes a target plus, when it contains percent-encoding, its decoded form.
@@ -182,6 +222,7 @@ mod tests {
             path_traversal: true,
             inspect_body: true,
             action: crate::config::ManagedAction::Block,
+            block_oversized_body: false,
         }
     }
 
@@ -233,6 +274,7 @@ mod tests {
             path_traversal: true,
             inspect_body: false,
             action: crate::config::ManagedAction::Block,
+            block_oversized_body: false,
         };
         let c = ctx("/products", Some("id=1 UNION SELECT x FROM y"));
         assert_eq!(scan(&rules, &c, None), None);
@@ -243,5 +285,60 @@ mod tests {
         let mut c = ctx("/products", Some("id=42&sort=price"));
         c.headers.insert(USER_AGENT, "Mozilla/5.0".parse().unwrap());
         assert_eq!(scan(&all(), &c, None), None);
+    }
+
+    #[test]
+    fn detects_payload_in_an_arbitrary_header() {
+        // Not one of the old hand-picked headers — an injection via X-Custom-Id
+        // used to slip past. Now every header is scanned.
+        let mut c = ctx("/api", None);
+        c.headers.insert("x-custom-id", "1 UNION SELECT secret FROM users".parse().unwrap());
+        assert_eq!(scan(&all(), &c, None), Some("sqli"));
+    }
+
+    #[test]
+    fn authorization_header_is_not_scanned() {
+        // An opaque bearer token that happens to contain "select" must not be a
+        // false positive.
+        let mut c = ctx("/api", None);
+        c.headers.insert(
+            hyper::header::AUTHORIZATION,
+            "Bearer selectfrom_x9".parse().unwrap());
+        assert_eq!(scan(&all(), &c, None), None);
+    }
+
+    fn gzip(data: &[u8]) -> Vec<u8> {
+        use std::io::Write;
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(data).unwrap();
+        enc.finish().unwrap()
+    }
+
+    #[test]
+    fn gzipped_payload_is_decoded_and_caught() {
+        let raw = b"comment=<script>steal(document.cookie)</script>";
+        let compressed = gzip(raw);
+
+        // Scanning the compressed bytes finds nothing (the whole point of the bypass)…
+        assert_eq!(scan(&all(), &ctx("/c", None), Some(&compressed)), None);
+
+        // …but decoding first surfaces the payload.
+        let decoded = decode_for_inspection(Some("gzip"), &compressed, 256 * 1024).unwrap();
+        assert_eq!(scan(&all(), &ctx("/c", None), Some(&decoded)), Some("xss"));
+    }
+
+    #[test]
+    fn uncompressed_body_needs_no_decoding() {
+        assert!(decode_for_inspection(None, b"plain", 1024).is_none());
+        assert!(decode_for_inspection(Some("identity"), b"plain", 1024).is_none());
+    }
+
+    #[test]
+    fn decompression_is_bounded_against_bombs() {
+        // 5 MB of zeros compresses tiny; decoding must stop at the cap, not blow up.
+        let bomb = gzip(&vec![0u8; 5 * 1024 * 1024]);
+        let cap = 64 * 1024;
+        let decoded = decode_for_inspection(Some("gzip"), &bomb, cap).unwrap();
+        assert!(decoded.len() <= cap, "decoded {} exceeded cap {cap}", decoded.len());
     }
 }

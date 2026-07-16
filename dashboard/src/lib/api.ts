@@ -221,6 +221,7 @@ export interface ZoneDetail {
     pathTraversal: boolean
     inspectBody: boolean
     action: string
+    blockOversizedBody: boolean
   }
 }
 

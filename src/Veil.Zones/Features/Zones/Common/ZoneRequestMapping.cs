@@ -118,6 +118,13 @@ public static class ZoneRequestMapping {
                     return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Value));
                 return new BodyRegexMatchCondition(request.Value);
 
+            case "body_json":
+                if(string.IsNullOrWhiteSpace(request.Path))
+                    return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Path));
+                if(string.IsNullOrWhiteSpace(request.Value))
+                    return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Value));
+                return new BodyJsonMatchCondition(request.Path, request.Value);
+
             case "ja3":
                 if(string.IsNullOrWhiteSpace(request.Value))
                     return RuleErrors.ConditionValueMissing(request.Type, nameof(request.Value));

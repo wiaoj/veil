@@ -51,7 +51,8 @@ public sealed record EdgeManagedRulesConfig(
     [property: JsonPropertyName("xss")] bool Xss,
     [property: JsonPropertyName("path_traversal")] bool PathTraversal,
     [property: JsonPropertyName("inspect_body")] bool InspectBody,
-    [property: JsonPropertyName("action")] string Action);
+    [property: JsonPropertyName("action")] string Action,
+    [property: JsonPropertyName("block_oversized_body")] bool BlockOversizedBody);
 
 /// <summary>Structured upstream sent when a zone has more than one target.</summary>
 public sealed record EdgeUpstreamConfig(
@@ -83,7 +84,9 @@ public sealed record EdgeConditionConfig(
     [property: JsonPropertyName("type")] string Type,
     [property: JsonPropertyName("value")] string Value,
     [property: JsonPropertyName("name"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? Name = null);
+    string? Name = null,
+    [property: JsonPropertyName("path"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Path = null);
 
 public sealed record EdgeRateLimitConfig(
     [property: JsonPropertyName("requests")] int Requests,
@@ -133,7 +136,8 @@ public static class EdgeConfigSnapshotBuilder {
                     zone.ManagedRules.Xss,
                     zone.ManagedRules.PathTraversal,
                     zone.ManagedRules.InspectBody,
-                    zone.ManagedRules.Action == ManagedRuleAction.Challenge ? "challenge" : "block")
+                    zone.ManagedRules.Action == ManagedRuleAction.Challenge ? "challenge" : "block",
+                    zone.ManagedRules.BlockOversizedBody)
                 : null;
 
             EdgeChallengeConfig? challenge = zone.Status is not ZoneStatus.Paused && zone.Challenge.Enabled
@@ -229,6 +233,7 @@ public static class EdgeConfigSnapshotBuilder {
                 QueryRegexMatchCondition c => new EdgeConditionConfig("query_regex", c.Regex),
                 HeaderRegexMatchCondition c => new EdgeConditionConfig("header_regex", c.Regex, Name: c.Name),
                 BodyRegexMatchCondition c => new EdgeConditionConfig("body_regex", c.Regex),
+                BodyJsonMatchCondition c => new EdgeConditionConfig("body_json", c.Regex, Path: c.Path),
                 Ja3MatchCondition c => new EdgeConditionConfig("ja3", c.Fingerprint),
                 Ja4MatchCondition c => new EdgeConditionConfig("ja4", c.Fingerprint),
                 _ => null
