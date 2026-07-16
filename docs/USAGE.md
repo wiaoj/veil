@@ -129,8 +129,117 @@ outcome).
 
 ## 4. Zone configuration
 
-A zone routes a set of hostnames to an upstream and carries the rules. This is
-the canonical shape pushed to edge nodes (and the local `veil.json` in dev):
+A zone routes a set of hostnames to an upstream and carries the rules. Manage it
+from the dashboard, or over the API as below. Anything you change is pushed to
+the edge fleet within a second (see 5.1).
+
+### Managing zones over the API
+
+All calls need a session token (§3). Enums are sent as strings; bodies are
+camelCase JSON.
+
+```bash
+H="Authorization: Bearer $ACCESS"
+API=http://localhost:5210
+JSON='Content-Type: application/json'
+
+# ── Create ────────────────────────────────────────────────────────────
+curl -X POST $API/v1/zones -H "$H" -H "$JSON" -d '{
+  "hostname": "example.com",
+  "upstream": {
+    "targets": [{ "url": "http://10.0.0.5:3000", "weight": 1 }],
+    "strategy": "RoundRobin",
+    "connectTimeoutMs": 5000,
+    "responseTimeoutMs": 30000,
+    "passHostHeader": true
+  },
+  "challenge": { "enabled": true, "difficulty": 20, "expirationSeconds": 600, "riskThreshold": 70 }
+}'
+# → { "id": "zon_…", "hostname": "example.com", "status": "Provisioning" }
+ZONE=zon_…
+
+# ── Inspect ───────────────────────────────────────────────────────────
+curl $API/v1/zones        -H "$H"           # list (paginated)
+curl $API/v1/zones/$ZONE  -H "$H"           # detail: upstream, challenge, rules,
+                                            #   cacheEnabled, shadow, managedRules
+curl $API/v1/zones/$ZONE/rules -H "$H"      # rules only
+
+# ── Rules ─────────────────────────────────────────────────────────────
+# Lower priority is evaluated first; the first matching terminal rule wins.
+curl -X POST $API/v1/zones/$ZONE/rules -H "$H" -H "$JSON" -d '{
+  "name": "block RU", "priority": 20, "action": "Block",
+  "conditions": [{ "type": "country", "value": "RU" }]
+}'
+# → { "id": "rul_…", … }
+
+curl -X POST $API/v1/zones/$ZONE/rules -H "$H" -H "$JSON" -d '{
+  "name": "rate limit the API", "priority": 40, "action": "RateLimit",
+  "conditions": [{ "type": "path_match", "value": "/api", "mode": "prefix" }],
+  "rateLimit": { "requests": 100, "windowSecs": 60 }
+}'
+
+# Conditions are AND-ed: this one needs both to match.
+curl -X POST $API/v1/zones/$ZONE/rules -H "$H" -H "$JSON" -d '{
+  "name": "challenge scrapers on /search", "priority": 30, "action": "Challenge",
+  "conditions": [
+    { "type": "path_match", "value": "/search", "mode": "prefix" },
+    { "type": "user_agent", "value": "python" }
+  ]
+}'
+
+curl -X PUT    $API/v1/zones/$ZONE/rules/order -H "$H" -H "$JSON" \
+     -d '{ "ruleIds": ["rul_a", "rul_b", "rul_c"] }'      # renumbers priorities
+curl -X PATCH  $API/v1/zones/$ZONE/rules/rul_a -H "$H" -H "$JSON" \
+     -d '{ "isEnabled": false }'                          # or { "priority": 15 }
+curl -X DELETE $API/v1/zones/$ZONE/rules/rul_a -H "$H"
+
+# ── Zone settings (each replaces the whole block) ──────────────────────
+curl -X PUT $API/v1/zones/$ZONE/shadow        -H "$H" -H "$JSON" -d '{ "enabled": true }'
+curl -X PUT $API/v1/zones/$ZONE/cache         -H "$H" -H "$JSON" -d '{ "enabled": true }'
+curl -X PUT $API/v1/zones/$ZONE/managed-rules -H "$H" -H "$JSON" -d '{
+  "sqlInjection": true, "xss": true, "pathTraversal": true,
+  "inspectBody": true, "action": "block"
+}'
+curl -X PUT $API/v1/zones/$ZONE/challenge -H "$H" -H "$JSON" -d '{
+  "enabled": true, "difficulty": 22, "expirationSeconds": 600,
+  "requireCaptcha": false, "riskThreshold": 60
+}'
+# Add a second target → weighted round-robin (4.7)
+curl -X PUT $API/v1/zones/$ZONE/upstream -H "$H" -H "$JSON" -d '{
+  "targets": [
+    { "url": "http://10.0.0.5:3000", "weight": 3 },
+    { "url": "http://10.0.0.6:3000", "weight": 1 }
+  ],
+  "strategy": "RoundRobin", "connectTimeoutMs": 5000,
+  "responseTimeoutMs": 30000, "passHostHeader": true
+}'
+
+# ── Lifecycle ─────────────────────────────────────────────────────────
+curl -X POST   $API/v1/zones/$ZONE/activate -H "$H"   # Provisioning → Active
+curl -X POST   $API/v1/zones/$ZONE/pause    -H "$H"   # pass traffic through unfiltered
+curl -X POST   $API/v1/zones/$ZONE/resume   -H "$H"
+curl -X DELETE $API/v1/zones/$ZONE          -H "$H"   # edges drop it on the next push
+```
+
+**Values:** `action` = `Allow` · `Block` · `Challenge` · `RateLimit` · `Log` —
+`strategy` = `RoundRobin` · `IpHash` · `LeastConnections` — condition `type` see
+4.2 (`asn` uses the `asn` field, `header`/`header_regex` also need `name`,
+`path_match` takes `mode`: `prefix`/`exact`).
+
+### Rolling out a rule set safely
+
+```bash
+curl -X PUT  $API/v1/zones/$ZONE/shadow -H "$H" -H "$JSON" -d '{ "enabled": true }'
+# … add rules, then watch what they *would* have done:
+#   dashboard /live, or the verdicts shadow_block / shadow_challenge /
+#   shadow_rate_limited in the request log. Nothing is enforced yet.
+curl -X PUT  $API/v1/zones/$ZONE/shadow -H "$H" -H "$JSON" -d '{ "enabled": false }'
+```
+
+### The pushed config shape (reference)
+
+This is what the control plane pushes to edge nodes — and the same shape
+`veil.json` takes in local-file mode:
 
 ```jsonc
 {
@@ -187,6 +296,20 @@ the canonical shape pushed to edge nodes (and the local `veil.json` in dev):
 
 > Every field above is also settable from the dashboard (zone detail cards), which
 > pushes it to the fleet. `veil.json` is the same shape, for local-file mode.
+
+> **Two vocabularies — don't mix them.** The management API and the edge config
+> are different contracts, and 4.1–4.2 below describe the **edge** one:
+>
+> | | Management API (curl / dashboard) | Edge config (`veil.json`, pushed snapshot) |
+> |---|---|---|
+> | actions | `Block`, `RateLimit`, … (PascalCase) | `block`, `rate_limit`, … |
+> | single IP / CIDR | `ip_match` / `ip_range` | `ip` (accepts both) |
+> | path | `path_match` + `mode: prefix\|exact` | `path_prefix` / `path_exact` |
+> | user agent | `user_agent` | `user_agent_contains` |
+>
+> The control plane translates as it builds the snapshot. Conditions the edge
+> cannot enforce are dropped **fail-safe** — the whole rule is skipped rather than
+> enforced in a weakened form.
 
 ### 4.1 Actions
 `allow` · `block` · `challenge` · `rate_limit` (requires `rate_limit` params).
