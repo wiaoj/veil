@@ -81,3 +81,37 @@ spec:
               memory: 128Mi
             limits:
               memory: 256Mi
+---
+# Headless Service (clusterIP: None) — DNS returns one A record per *ready* edge
+# pod. This is how the control plane finds where to push config.
+#
+# Why it is needed: a DaemonSet shares one pod spec, so every edge pod presents
+# the same node token and the control plane sees a single registered node. But
+# there are N pods on N ephemeral IPs, so the one address recorded at
+# registration could only ever reach one of them — the rest would keep serving a
+# stale config until they restarted. Kubernetes already knows which pods are
+# ready; resolving this name at push time uses that instead of duplicating it
+# into our own table. No Kubernetes API access or RBAC is required.
+#
+# Paired with ConfigSync__Discovery__Mode=Dns on the control plane (see
+# 10-config.yaml). The port is the edge's in-cluster listener (containerPort
+# 8080), not the host port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: veil-edge-headless
+  namespace: veil
+  labels:
+    app.kubernetes.io/name: veil-edge
+    app.kubernetes.io/part-of: veil
+spec:
+  clusterIP: None
+  # Only ready pods are returned, so a pod that is still starting or draining
+  # is never pushed to.
+  publishNotReadyAddresses: false
+  selector:
+    app.kubernetes.io/name: veil-edge
+  ports:
+    - name: internal
+      port: 8080
+      targetPort: 8080

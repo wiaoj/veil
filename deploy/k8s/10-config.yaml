@@ -11,6 +11,16 @@ data:
   ClickHouse__Url: "http://clickhouse:8123"
   ClickHouse__Database: "veil"
   ClickHouse__Username: "veil"
+
+  # Where a registered edge node currently *is*. The node's identity (its token
+  # hash) lives in PostgreSQL and is stable; its address is not — DaemonSet pods
+  # are rescheduled onto new IPs. `Dns` resolves the headless Service to every
+  # ready pod, so config reaches the whole fleet instead of the single address
+  # recorded at registration. Use `Static` for VM/compose deployments.
+  ConfigSync__Discovery__Mode: "Dns"
+  ConfigSync__Discovery__DnsName: "veil-edge-headless.veil.svc.cluster.local"
+  # The edge's in-cluster listener (containerPort), not the host port.
+  ConfigSync__Discovery__Port: "8080"
 ---
 # Placeholder secret — DO NOT commit real values. Create it out-of-band, e.g.:
 #   kubectl -n veil create secret generic veil-secrets \

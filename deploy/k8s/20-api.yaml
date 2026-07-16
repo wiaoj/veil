@@ -22,6 +22,11 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+          # Non-secret settings: ClickHouse endpoint for the analytics read API
+          # and the edge-node discovery mode used by config sync.
+          envFrom:
+            - configMapRef:
+                name: veil-config
           env:
             - name: ASPNETCORE_URLS
               value: "http://+:8080"

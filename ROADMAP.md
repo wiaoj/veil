@@ -275,6 +275,8 @@
 
 - [x] `docker-compose.prod.yml` — resource limits, restart policies, healthchecks; multi-stage Dockerfiles for edge (Rust) + Veil.Api/Analytics.Worker (.NET, libraries-sibling build context) under `deploy/docker/`
 - [x] Kubernetes manifests — edge `DaemonSet` (host 80/443), control plane `Deployment`s + `Service`s, ConfigMap/Secret, `/healthz`+`/readyz` probes (`deploy/k8s/`)
+- [x] Config push reaches the whole fleet in Kubernetes — a DaemonSet shares one node identity across N ephemeral pod IPs, so the single address recorded at registration only ever reached one pod and the rest served stale config until restart (the edge only pulls at startup). Fixed by splitting identity (PostgreSQL) from location (resolved per push): a headless `Service` + `ConfigSync__Discovery__Mode=Dns` now pushes to every ready pod — Kubernetes is already the registry, so no API access or RBAC is needed. `Static` (VMs) and `Redis` (TTL'd self-registration, expiry *is* deregistration) are the other modes
+- [x] Control plane consumes the shared `ConfigMap` — `20-api.yaml` had no `envFrom`, so `Veil.Api` never received `ClickHouse__Url` and the analytics read API silently fell back to `localhost:8123`
 - [x] Redis manifests (3 isolated instances: rate-limit / tokens / config) — `deploy/k8s/50-redis.yaml` (StatefulSets + Services; swap for a Cluster/Sentinel operator for HA)
 - [x] HPA for `Veil.Api` and `Veil.Analytics` (autoscaling/v2, CPU 70%; 2–6 and 2–8 replicas)
 - [x] `Veil.ConfigSync` leader election verified under multi-replica — Redis lease (`RedisPushCoordinator`); only the lease holder pushes
