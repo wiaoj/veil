@@ -31,6 +31,10 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 rustls-pemfile = "2"
 # Body decompression for WAF inspection (bounded, to defuse decompression bombs)
 flate2 = "1"
+# Positive request validation against an embedded JSON Schema. default-features
+# off on purpose: no reqwest, no remote $ref resolution (an attacker-supplied
+# body must never make the edge fetch a URL).
+jsonschema = { version = "0.48", default-features = false }
 # HTTPS client connector for outbound webhooks (Phase 10)
 hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "ring", "webpki-tokio"] }
 

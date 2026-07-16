@@ -31,6 +31,26 @@ impl<'de> Deserialize<'de> for CompiledRegex {
     }
 }
 
+/// A JSON Schema compiled once at config-load time. Deserializes from an inline
+/// JSON Schema object; an invalid schema fails the whole config load (fail-safe).
+/// Validation is offline only — no remote `$ref` resolution.
+pub struct CompiledSchema(pub jsonschema::Validator);
+
+impl std::fmt::Debug for CompiledSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CompiledSchema(..)")
+    }
+}
+
+impl<'de> Deserialize<'de> for CompiledSchema {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let schema = serde_json::Value::deserialize(de)?;
+        jsonschema::validator_for(&schema)
+            .map(CompiledSchema)
+            .map_err(|e| serde::de::Error::custom(format!("invalid JSON Schema: {e}")))
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub zones: Vec<Zone>,
@@ -204,7 +224,10 @@ impl Zone {
                 .rules
                 .iter()
                 .flat_map(|r| &r.conditions)
-                .any(|c| matches!(c, Condition::BodyRegex { .. } | Condition::BodyJson { .. }))
+                .any(|c| matches!(c,
+                    Condition::BodyRegex { .. }
+                    | Condition::BodyJson { .. }
+                    | Condition::BodySchema { .. }))
     }
 }
 
@@ -313,6 +336,15 @@ pub enum Condition {
     BodyJson {
         path: String,
         value: CompiledRegex,
+    },
+    /// Positive validation: matches when the JSON request body does **not**
+    /// conform to the given JSON Schema (or isn't valid JSON at all). Paired with
+    /// a `block` action this enforces a contract — only conforming bodies pass —
+    /// while staying in the negative-model machinery, so shadow mode logs the
+    /// would-be rejects for free. Forces body buffering.
+    BodySchema {
+        #[serde(rename = "schema")]
+        value: CompiledSchema,
     },
     /// Matches the client's GeoIP country (ISO 3166-1 alpha-2, e.g. `"TR"`).
     /// Case-insensitive; never matches when no GeoIP database is loaded.

@@ -79,6 +79,16 @@ fn matches(condition: &Condition, ctx: &RequestContext, body: Option<&[u8]>) -> 
             .and_then(json_field)
             .and_then(|json| lookup_json_path(&json, path))
             .is_some_and(|field| value.0.is_match(&field)),
+        // Positive validation: this condition matches (→ the paired block fires)
+        // when a body is present but is not valid JSON, or is valid JSON that
+        // does not conform to the schema. A request with no body is left alone.
+        Condition::BodySchema { value } => match body {
+            None => false,
+            Some(b) => match serde_json::from_slice::<serde_json::Value>(b) {
+                Ok(instance) => !value.0.is_valid(&instance),
+                Err(_) => true, // sent a body but it isn't JSON → contract violated
+            },
+        },
         Condition::Country { value } => ctx
             .country
             .as_deref()
@@ -279,6 +289,76 @@ mod tests {
 
         // Non-JSON body → never matches.
         assert_eq!(evaluate(&zone, &c, &limiter, Some(b"not json")).await, Verdict::Allow);
+    }
+
+    #[tokio::test]
+    async fn body_schema_enforces_a_contract() {
+        // "Only a body matching this schema may pass": an invalid body is blocked,
+        // a valid one falls through. Positive validation built out of the negative
+        // model — invalid → the condition matches → block.
+        let schema = r#"{
+            "type": "object",
+            "required": ["email", "age"],
+            "additionalProperties": false,
+            "properties": {
+                "email": { "type": "string", "format": "email" },
+                "age": { "type": "integer", "minimum": 0, "maximum": 130 }
+            }
+        }"#;
+        let zone = zone(&format!(
+            r#"[{{"id": "schema", "priority": 1, "action": "block",
+                 "conditions": [{{"type": "body_schema", "schema": {schema}}}]}}]"#
+        ));
+        let limiter = RateLimiter::in_memory();
+        let c = ctx("1.1.1.1", "/users");
+
+        // Conforms → not blocked.
+        let ok = br#"{"email":"a@b.com","age":30}"#;
+        assert_eq!(evaluate(&zone, &c, &limiter, Some(ok)).await, Verdict::Allow);
+
+        // Missing a required field → blocked.
+        let missing = br#"{"email":"a@b.com"}"#;
+        assert_eq!(
+            evaluate(&zone, &c, &limiter, Some(missing)).await,
+            Verdict::Block { rule_id: "schema".into() }
+        );
+
+        // Wrong type / out of range → blocked.
+        let bad_type = br#"{"email":"a@b.com","age":"old"}"#;
+        assert_eq!(
+            evaluate(&zone, &c, &limiter, Some(bad_type)).await,
+            Verdict::Block { rule_id: "schema".into() }
+        );
+
+        // An unexpected extra field (additionalProperties:false) → blocked. This
+        // is the payoff over negative rules: you didn't have to anticipate the
+        // attack, only describe the valid shape.
+        let extra = br#"{"email":"a@b.com","age":30,"is_admin":true}"#;
+        assert_eq!(
+            evaluate(&zone, &c, &limiter, Some(extra)).await,
+            Verdict::Block { rule_id: "schema".into() }
+        );
+
+        // A body that isn't JSON at all → blocked.
+        assert_eq!(
+            evaluate(&zone, &c, &limiter, Some(b"not json")).await,
+            Verdict::Block { rule_id: "schema".into() }
+        );
+
+        // No body → nothing to validate, left alone.
+        assert_eq!(evaluate(&zone, &c, &limiter, None).await, Verdict::Allow);
+    }
+
+    #[test]
+    fn invalid_schema_fails_config_load() {
+        // A malformed schema is caught at load time, not at request time.
+        let err = Config::from_json(
+            r#"{"zones": [{"name": "z", "hosts": ["*"], "upstream": "http://h:1",
+                "rules": [{"id": "r", "priority": 1, "action": "block",
+                           "conditions": [{"type": "body_schema",
+                                           "schema": {"type": "not-a-real-type"}}]}]}]}"#,
+        );
+        assert!(err.is_err());
     }
 
     #[test]
