@@ -95,8 +95,12 @@ The control plane maintains the authoritative configuration in PostgreSQL. When 
 - **Tokio** — async runtime
 - **Hyper** — HTTP/1.1 and HTTP/2 server and client
 - **Rustls** — TLS termination (no OpenSSL dependency)
+- **JA3 + JA4** — TLS client fingerprinting off the peeked ClientHello; also feeds
+  the risk score (a browser User-Agent whose handshake isn't a browser's is a lie)
 - **MaxMind GeoIP2** — country and ASN lookups (MMDB)
 - **SHA-256** — PoW challenge generation and verification
+- **Load balancing** — weighted round-robin / IP-hash across a zone's upstreams
+- **Response cache** — opt-in per zone, conservative RFC 7234 subset
 
 ### Control Plane (.NET 10)
 - **ASP.NET Core** — REST API (`Veil.Api`), minimal-API vertical slices

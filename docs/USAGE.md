@@ -138,7 +138,17 @@ the canonical shape pushed to edge nodes (and the local `veil.json` in dev):
   "zones": [{
     "name": "example",
     "hosts": ["example.com", "www.example.com"],
+
+    // Either a bare URL (single target) …
     "upstream": "http://127.0.0.1:3000",
+    // … or several, load balanced (see 4.7):
+    // "upstream": {
+    //   "targets": [
+    //     { "url": "http://10.0.0.5:3000", "weight": 3 },
+    //     { "url": "http://10.0.0.6:3000", "weight": 1 }
+    //   ],
+    //   "strategy": "round_robin"     // round_robin | ip_hash | least_connections
+    // },
 
     "rules": [
       { "id": "allow-office", "priority": 10, "action": "allow",
@@ -155,7 +165,7 @@ the canonical shape pushed to edge nodes (and the local `veil.json` in dev):
         "rate_limit": { "requests": 100, "window_secs": 60 } },
 
       { "id": "block-badbot", "priority": 50, "action": "block",
-        "conditions": [{ "type": "ja3", "value": "<ja3-md5-hash>" }] }
+        "conditions": [{ "type": "ja4", "value": "t13d1516h2_8daaf6152771_b186095e22b6" }] }
     ],
 
     "managed_rules": {
@@ -163,10 +173,20 @@ the canonical shape pushed to edge nodes (and the local `veil.json` in dev):
       "inspect_body": true, "action": "block"
     },
 
-    "challenge": { "tier2_risk_threshold": 70 }
+    "challenge": {
+      "tier2_risk_threshold": 70,
+      "base_difficulty": 20,    // optional; else VEIL_POW_DIFFICULTY
+      "token_ttl_secs": 600     // optional; else VEIL_CHALLENGE_TTL
+    },
+
+    "shadow": false,            // dry-run the whole zone (4.5)
+    "cache": {}                 // presence enables response caching (4.8)
   }]
 }
 ```
+
+> Every field above is also settable from the dashboard (zone detail cards), which
+> pushes it to the fleet. `veil.json` is the same shape, for local-file mode.
 
 ### 4.1 Actions
 `allow` · `block` · `challenge` · `rate_limit` (requires `rate_limit` params).
@@ -183,9 +203,15 @@ wins. A `rate_limit` rule only terminates when the limit is exceeded.
 | `user_agent_contains` | substring (case-insensitive) |
 | `path_regex`, `query_regex`, `header_regex`, `body_regex` | regex (compiled at load) |
 | `country` | GeoIP ISO country code (needs `VEIL_GEOIP_PATH`) |
-| `ja3` | TLS JA3 fingerprint hash (HTTPS only) |
+| `asn` | GeoIP ASN as a decimal string, e.g. `"64500"` (needs `VEIL_GEOIP_ASN_PATH`) |
+| `ja3` | TLS JA3 fingerprint (MD5 hex) — **HTTPS only** |
+| `ja4` | TLS JA4 fingerprint (FoxIO) — **HTTPS only**; more robust than JA3 against extension-order randomisation |
 
 `body_regex` and `managed_rules.inspect_body` buffer the request body (≤256 KiB).
+
+> **`ja3`/`ja4` only work when the edge terminates TLS itself.** Behind a
+> TLS-terminating load balancer there is no ClientHello to fingerprint, so both
+> are absent and any rule using them silently never matches.
 
 ### 4.3 Managed signatures (WAF)
 `managed_rules` enables built-in SQLi / XSS / traversal signature families,
@@ -214,6 +240,69 @@ fail open.
   server-side). Self-hosted, no third party. The behavioural signal is a
   cost/friction layer; the hard floor is the PoW.
 
+`base_difficulty` and `token_ttl_secs` override the engine defaults per zone. The
+difficulty a challenge was issued at is bound to its nonce, so a client cannot
+solve below the level it was served; the token TTL rides on the nonce too, so the
+(pre-zone) verify endpoint honours the zone's setting.
+
+**Risk score** (`0..100`, from the header fingerprint + TLS):
+
+| Signal | Points |
+|---|---|
+| no `User-Agent` | 45 |
+| UA contains a bot token (`curl`, `python`, `scrapy`, `headless`, …) | 35 |
+| UA shorter than 16 chars | 10 |
+| missing `Accept` / `Accept-Language` / `Accept-Encoding` | 15 / 15 / 10 |
+| **UA claims a browser but the TLS ClientHello disagrees** (no SNI, or ALPN ≠ `h2`) | 30 |
+
+The header signals are trivially forged — a bot sending a full browser header set
+scores 0 on all of them. The last one is not: the fingerprint is a property of the
+client's TLS stack, so a tool forging a Chrome UA while handshaking with its
+library defaults contradicts itself. Score → up to +4 PoW bits (each bit doubles
+the work).
+
+### 4.7 Load balancing
+A zone may list several upstream targets with weights:
+
+| Strategy | Behaviour |
+|---|---|
+| `round_robin` (default) | weighted round-robin; a target with `weight: 3` gets 3× the requests |
+| `ip_hash` | sticky per client IP |
+| `least_connections` | **currently behaves as `round_robin`** — the edge has no upstream in-flight counters yet |
+
+Bound the origin with `VEIL_UPSTREAM_CONNECT_TIMEOUT_SECS` (default 10) and
+`VEIL_UPSTREAM_TIMEOUT_SECS` (default 30, time-to-response-headers; body streaming
+is not capped).
+
+### 4.8 Response caching (opt-in)
+Presence of `"cache": {}` enables it. Deliberately strict — a security proxy must
+not turn caching into a leak or a poisoning vector, so it caches **only**:
+
+- `GET` requests with **no** `Authorization` and **no** `Cookie`
+- `200` responses with **no** `Set-Cookie` and **no** `Vary`
+- responses with an **explicit** `Cache-Control: s-maxage`/`max-age`
+  (no heuristic freshness; `no-store`/`no-cache`/`private` disable it)
+- bodies with a known `Content-Length` within `max_body_bytes` (default 1 MiB)
+
+Responses carry `X-Veil-Cache: HIT|MISS`. The lookup happens **after** rule
+evaluation, so a blocked or challenged request never serves from cache.
+
+### 4.9 Origin error pages
+Upstream failures render the branded error page (HTML for browsers,
+`application/problem+json` otherwise, EN/TR) and carry an `X-Veil-Error` header:
+
+| Reason | Status |
+|---|---|
+| `web_server_down` (connection refused) | 502 |
+| `origin_unreachable` (DNS/route) | 502 |
+| `origin_ssl_handshake` / `origin_ssl_invalid` (https origin) | 502 |
+| `origin_bad_response` / `bad_gateway` | 502 |
+| `origin_timeout` | 504 |
+| `edge_not_ready` (no config loaded) | 503 |
+
+Standard status codes on the wire — not Cloudflare-style 52x, which confuse
+intermediaries and monitoring. The origin's *own* 5xx passes through untouched.
+
 ---
 
 ## 5. Edge node modes
@@ -232,6 +321,29 @@ curl -X POST http://localhost:5210/v1/edge-nodes -H "Authorization: Bearer $ACCE
 
 See [`edge/.env.example`](../edge/.env.example) for all edge variables (TLS,
 GeoIP, rate-limit Redis, analytics, challenge tuning).
+
+### 5.1 How config reaches a node
+
+The control plane **pushes**; it is never in the request path. A change raises a
+domain event → outbox → in-process bus → the push loop wakes (a burst of changes
+coalesces into one push), builds the snapshot, HMAC-SHA256 signs the body and
+POSTs it to each node. A 5-minute reconcile pass converges nodes that missed one.
+
+Pushing requires knowing *where* a node is — and a registered node carries two
+facts with different lifetimes: its **identity** (token hash: durable, revocable,
+in PostgreSQL) and its **location** (address: ephemeral as soon as the fleet is
+dynamic). `ConfigSync:Discovery:Mode` picks how location is resolved:
+
+| Mode | Resolves to | Use for |
+|---|---|---|
+| `Static` (default) | the address recorded at registration | VMs, bare metal, docker-compose |
+| `Dns` | every A record behind `Discovery:DnsName` | Kubernetes: point it at a **headless** Service and the push reaches every ready pod. Kubernetes is already the registry — no API access or RBAC needed |
+| `Redis` | TTL'd self-registrations under `Discovery:RedisKeyPrefix` (`{prefix}{id}` → `{"address":"…"}`) | dynamic non-Kubernetes fleets; a node that stops renewing expires on its own, so there is no reaper |
+
+> In Kubernetes a DaemonSet shares one node identity across N ephemeral pod IPs,
+> so `Static` would only ever reach one pod and the rest would serve stale config
+> until restart (the edge pulls only at startup). Use `Dns` — see
+> [`deploy/k8s/README.md`](../deploy/k8s/README.md).
 
 ---
 
@@ -252,8 +364,18 @@ Active certs renew automatically within `Certificates:RenewBeforeDays` (30).
 
 ## 7. Observability
 
-- **Prometheus** — edge and control plane expose `GET /metrics`.
-- **Health** — `GET /healthz` (liveness), `GET /readyz` (readiness).
+- **Prometheus** — edge and control plane expose `GET /metrics`:
+
+  | Metric | Where | Notes |
+  |---|---|---|
+  | `veil_requests_total{verdict}` | edge | `allow`, `block`, `challenge`, `challenge_pass`, `rate_limited`, `no_zone`, `not_ready` |
+  | `veil_request_duration_seconds` | edge | histogram |
+  | `veil_upstream_errors_total{reason}` | edge | labelled by the classified origin failure (see 4.9), so 502-vs-504-vs-DNS is distinguishable |
+  | `veil_config_push_total{result}` | control plane | `success` / `failure` |
+  | `veil_clickhouse_rows_written_total`, `veil_clickhouse_write_failures_total` | worker | |
+
+- **Health** — `GET /healthz` (liveness), `GET /readyz` (readiness). Edge
+  readiness requires a loaded zone config.
 - **OpenTelemetry** — set `OTEL_EXPORTER_OTLP_ENDPOINT` to export distributed
   traces + metrics from the control plane and worker (opt-in; no-op when unset).
 - **Analytics** — edge ships request logs to the worker → ClickHouse; query via
