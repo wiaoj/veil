@@ -91,6 +91,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(analytics::shipper::run(buffer, settings));
     }
 
+    // Config reconcile poller (opt-in, control-plane mode only) — periodically
+    // re-pulls the snapshot so a node that missed a runtime push converges
+    // without waiting for a restart. Off unless VEIL_CONFIG_RECONCILE_SECS is set.
+    if let (Some(reconcile_settings), Some(interval)) =
+        (sync::settings_from_env(), sync::reconcile_interval_from_env())
+    {
+        info!(interval_secs = interval.as_secs(), "config reconcile poller enabled");
+        tokio::spawn(proxy::run_config_reconcile(
+            Arc::clone(&state),
+            reconcile_settings,
+            interval,
+        ));
+    }
+
     let mut http_shutdown = shutdown_rx;
     proxy::serve_with_shutdown(listener, state, async move {
         let _ = http_shutdown.changed().await;

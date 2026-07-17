@@ -948,13 +948,7 @@ async fn handle_config_push(
     match Config::from_json(raw) {
         Ok(config) => {
             let zones = config.zones.len();
-            if let Some(resolver) = &state.cert_resolver {
-                resolver.update_from_config(&config);
-            }
-            state.config.swap(config);
-            if let Some(path) = &state.config_cache_path {
-                cache::store(path, raw);
-            }
+            apply_config(state, config, raw);
             info!(zones, client_ip = %ctx.client_ip, "config push applied");
             json_response(StatusCode::OK, &format!(r#"{{"ok":true,"zones":{zones}}}"#))
         }
@@ -964,6 +958,56 @@ async fn handle_config_push(
                 StatusCode::BAD_REQUEST,
                 &format!(r#"{{"error":"invalid_config","detail":"{err}"}}"#).replace('\n', " "),
             )
+        }
+    }
+}
+
+/// Applies a freshly obtained config snapshot: refresh SNI certs, atomically
+/// swap the active snapshot, and persist the last-known-good cache. Shared by
+/// the runtime push handler and the reconcile poller so both converge identically.
+fn apply_config(state: &AppState, config: Config, raw: &str) {
+    if let Some(resolver) = &state.cert_resolver {
+        resolver.update_from_config(&config);
+    }
+    state.config.swap(config);
+    if let Some(path) = &state.config_cache_path {
+        cache::store(path, raw);
+    }
+}
+
+/// Background safety net: periodically re-pull the full snapshot from the control
+/// plane and apply it when it differs from the one in memory. This lets a node
+/// that missed a runtime push — e.g. it was briefly unreachable while ConfigSync
+/// exhausted its retries — converge without waiting for a restart. Opt-in via
+/// `VEIL_CONFIG_RECONCILE_SECS`; the request hot path is never touched (this runs
+/// off a timer). A failed pull is non-fatal: the node keeps its current snapshot
+/// and tries again next tick.
+pub async fn run_config_reconcile(
+    state: Arc<AppState>,
+    settings: crate::config::sync::SyncSettings,
+    interval: std::time::Duration,
+) {
+    // Seeded empty so the first tick adopts whatever the control plane serves,
+    // then only genuine drift triggers a swap thereafter.
+    let mut last_raw = String::new();
+    let mut ticker = tokio::time::interval(interval);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ticker.tick().await; // the first tick fires immediately — skip it
+
+    loop {
+        ticker.tick().await;
+        match crate::config::sync::fetch_initial(&settings).await {
+            Ok((config, raw)) => {
+                if raw != last_raw {
+                    let zones = config.zones.len();
+                    apply_config(&state, config, &raw);
+                    last_raw = raw;
+                    info!(zones, "config reconciled from control plane (drift corrected)");
+                }
+            }
+            Err(err) => {
+                debug!(error = %err, "config reconcile pull failed; keeping current snapshot");
+            }
         }
     }
 }

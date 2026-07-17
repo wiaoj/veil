@@ -284,8 +284,9 @@
     var NONCE     = "{nonce}";
     var DIFFICULTY = {difficulty};
     var TIER       = {tier};
-    // 1 → Tier 2 is served as a visible "verify I'm human" widget (self-hosted;
-    // the click gates submission). 0 → the invisible passive check.
+    // 1 → Tier 2 offers a visible "verify I'm human" checkbox as an auto→manual
+    // fallback: it first tries to pass invisibly, and only reveals the checkbox
+    // if no real interaction arrives. 0 → invisible passive check only.
     var INTERACTIVE = {interactive};
     var VERIFY_CHECKING = "{verify_checking}";
     var VERIFY_DONE     = "{verify_done}";
@@ -300,8 +301,6 @@
     var verifyBox      = document.getElementById("verifyBox");
     var verifyCheckbox = document.getElementById("verifyCheckbox");
     var verifyLabel    = document.getElementById("verifyLabel");
-    // Interactive Tier 2 only: gates submission on an explicit human click.
-    var interacted = false;
 
     // ── Behavioural telemetry (Tier 2 only) ────────────────
     // Captured while the PoW solves; scored server-side. A scripted client
@@ -320,21 +319,29 @@
       }, { passive: true });
     }
 
-    // ── Visible interaction widget (Tier 2 opt-in) ─────────
-    // Swaps the invisible progress view for a "verify I'm human" checkbox. The
-    // PoW still solves in the background; the click gates submission and — via
-    // the pointer movement it takes to reach the box — supplies the behavioural
-    // telemetry the server already scores. No third-party service is involved.
-    if (TIER === 2 && INTERACTIVE === 1) {
+    // ── Visible interaction widget (Tier 2 auto→manual fallback) ─────────
+    // Tier 2 first tries to pass invisibly on the passive telemetry above. If the
+    // PoW is solved but no real interaction arrives, revealFallback() swaps the
+    // progress view for a "verify I'm human" checkbox. The click — and the pointer
+    // movement to reach it — supplies the telemetry the server scores. No third
+    // party is involved. Only offered when the zone opts in (INTERACTIVE === 1).
+    var fallbackShown = false;
+    function revealFallback() {
+      if (fallbackShown || submitted || INTERACTIVE !== 1 || TIER !== 2) { return; }
+      fallbackShown = true;
       document.getElementById("progressWrap").style.display = "none";
       verifyBox.style.display = "block";
+    }
+    if (TIER === 2 && INTERACTIVE === 1) {
       verifyCheckbox.addEventListener("click", function () {
-        if (interacted) { return; }
-        interacted = true;
+        if (submitted) { return; }
         verifyBox.className = "verify-box checking";
         verifyLabel.textContent = VERIFY_CHECKING;
         maybeSubmit();
       });
+      // Safety net: if the passive attempt hasn't completed shortly after load,
+      // reveal the checkbox so there is always an explicit path forward.
+      setTimeout(revealFallback, 2500);
     }
 
     function now() {
@@ -377,9 +384,11 @@
     var submitted = false;
     function maybeSubmit() {
       if (submitted || solvedCounter === null) { return; }
-      if (TIER === 2 && (!behavior || behavior.count < MIN_EVENTS)) { return; }
-      // Interactive Tier 2 waits for the explicit human click on the widget.
-      if (TIER === 2 && INTERACTIVE === 1 && !interacted) { return; }
+      if (TIER === 2 && (!behavior || behavior.count < MIN_EVENTS)) {
+        // PoW solved but no real interaction yet — offer the manual fallback.
+        revealFallback();
+        return;
+      }
       submitted = true;
       submitSolution(solvedCounter, (TIER === 2) ? snapshot() : null);
     }

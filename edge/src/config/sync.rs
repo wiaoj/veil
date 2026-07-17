@@ -36,6 +36,18 @@ pub fn settings_from_env() -> Option<SyncSettings> {
     })
 }
 
+/// Optional periodic reconcile interval (`VEIL_CONFIG_RECONCILE_SECS`). When set
+/// to a positive value, the node re-pulls the full snapshot on this cadence as a
+/// safety net for missed runtime pushes. Unset / `0` disables it (push-only).
+/// Values below 30s are clamped up — this is a drift corrector, not a poller.
+pub fn reconcile_interval_from_env() -> Option<Duration> {
+    std::env::var("VEIL_CONFIG_RECONCILE_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|&secs| secs > 0)
+        .map(|secs| Duration::from_secs(secs.max(30)))
+}
+
 /// `fetch_initial` with exponential backoff. Returns the last error once all
 /// attempts are exhausted.
 pub async fn fetch_with_retry(
