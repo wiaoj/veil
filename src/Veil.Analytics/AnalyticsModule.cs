@@ -28,6 +28,10 @@ public sealed class AnalyticsModule : IModule {
         services.AddSingleton<RequestLogQueue>();
         services.AddHostedService<ClickHouseFlushService>();
 
+        // Human-verification interaction telemetry stream (ML training data).
+        services.AddSingleton<InteractionQueue>();
+        services.AddHostedService<InteractionFlushService>();
+
         // Optional SIEM export (NDJSON over HTTP). Active only when configured.
         services.Configure<SiemOptions>(configuration.GetSection(SiemOptions.SectionName));
         string? siemEndpoint = configuration.GetSection(SiemOptions.SectionName)[nameof(SiemOptions.Endpoint)];

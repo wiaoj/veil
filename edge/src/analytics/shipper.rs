@@ -19,7 +19,7 @@ use hyper_util::rt::TokioExecutor;
 use serde::Serialize;
 use tracing::{debug, warn};
 
-use super::{LogBuffer, LogRecord};
+use super::LogBuffer;
 use crate::config::sync::NODE_TOKEN_HEADER;
 
 pub const FLUSH_INTERVAL: Duration = Duration::from_millis(500);
@@ -27,9 +27,16 @@ pub const FLUSH_INTERVAL: Duration = Duration::from_millis(500);
 /// Upper bound on records per POST.
 pub const MAX_BATCH: usize = 1_000;
 
+/// Ingest endpoint for request logs (relative to `VEIL_ANALYTICS_URL`).
+pub const REQUEST_LOG_ENDPOINT: &str = "ingest";
+/// Ingest endpoint for human-verification interaction telemetry.
+pub const INTERACTION_ENDPOINT: &str = "ingest/interactions";
+
+#[derive(Clone)]
 pub struct ShipperSettings {
-    /// Full ingest endpoint, e.g. `http://analytics:5001/ingest`.
-    pub ingest_url: String,
+    /// Analytics base URL (`VEIL_ANALYTICS_URL`, trailing slash trimmed). The
+    /// per-stream endpoint path is appended by [`run`].
+    pub base_url: String,
     /// Node identity sent in the payload (`VEIL_NODE_ID`, `"local"` when unset).
     pub node_id: String,
     /// `VEIL_NODE_TOKEN`; the control plane authenticates batches with it.
@@ -41,19 +48,27 @@ pub struct ShipperSettings {
 pub fn settings_from_env() -> Option<ShipperSettings> {
     let base = std::env::var("VEIL_ANALYTICS_URL").ok()?;
     Some(ShipperSettings {
-        ingest_url: format!("{}/ingest", base.trim_end_matches('/')),
+        base_url: base.trim_end_matches('/').to_owned(),
         node_id: std::env::var("VEIL_NODE_ID").unwrap_or_else(|_| "local".to_owned()),
         node_token: std::env::var("VEIL_NODE_TOKEN").ok(),
     })
 }
 
 #[derive(Serialize)]
-struct IngestPayload<'a> {
+struct IngestPayload<'a, T> {
     node_id: &'a str,
-    records: &'a [LogRecord],
+    records: &'a [T],
 }
 
-pub async fn run(buffer: Arc<LogBuffer>, settings: ShipperSettings) {
+/// Drains `buffer` to `{base_url}/{endpoint}` on the shared fire-and-forget
+/// cadence. Generic over the record type so request logs and interaction
+/// telemetry reuse one shipper.
+pub async fn run<T: Serialize + Send + 'static>(
+    buffer: Arc<LogBuffer<T>>,
+    settings: ShipperSettings,
+    endpoint: &'static str,
+) {
+    let url = format!("{}/{}", settings.base_url, endpoint);
     let client: Client<HttpConnector, Full<Bytes>> =
         Client::builder(TokioExecutor::new()).build_http();
 
@@ -68,13 +83,13 @@ pub async fn run(buffer: Arc<LogBuffer>, settings: ShipperSettings) {
             if batch.is_empty() {
                 break;
             }
-            match ship(&client, &settings, &batch).await {
-                Ok(()) => debug!(records = batch.len(), "analytics batch shipped"),
+            match ship(&client, &url, &settings, &batch).await {
+                Ok(()) => debug!(records = batch.len(), endpoint, "analytics batch shipped"),
                 Err(err) => {
                     // Drained records are gone by design; stop draining this
                     // cycle so an outage costs one POST per interval, not a
                     // tight error loop.
-                    warn!(records = batch.len(), error = %err, "analytics batch dropped");
+                    warn!(records = batch.len(), endpoint, error = %err, "analytics batch dropped");
                     break;
                 }
             }
@@ -82,17 +97,18 @@ pub async fn run(buffer: Arc<LogBuffer>, settings: ShipperSettings) {
     }
 }
 
-async fn ship(
+async fn ship<T: Serialize>(
     client: &Client<HttpConnector, Full<Bytes>>,
+    url: &str,
     settings: &ShipperSettings,
-    batch: &[LogRecord],
+    batch: &[T],
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let payload = serde_json::to_vec(&IngestPayload {
         node_id: &settings.node_id,
         records: batch,
     })?;
 
-    let mut request = Request::post(&settings.ingest_url)
+    let mut request = Request::post(url)
         .header(CONTENT_TYPE, "application/json");
     if let Some(token) = &settings.node_token {
         request = request.header(NODE_TOKEN_HEADER, token);

@@ -13,6 +13,7 @@ namespace Veil.Analytics.ClickHouse;
 public sealed class ClickHouseWriter(IHttpClientFactory httpClientFactory, IOptions<ClickHouseOptions> options) {
     public const string HttpClientName = "clickhouse";
     public const string TableName = "request_logs";
+    public const string InteractionTableName = "challenge_interactions";
 
     private static readonly JsonSerializerOptions RowSerializerOptions = new();
 
@@ -61,6 +62,49 @@ public sealed class ClickHouseWriter(IHttpClientFactory httpClientFactory, IOpti
 
         await ExecuteAsync(
             $"INSERT INTO {TableName} FORMAT JSONEachRow",
+            ndjson.ToString(),
+            cancellationToken);
+    }
+
+    /// <summary>Creates the human-verification interaction table if absent.
+    /// Idempotent; called at worker startup.</summary>
+    public async Task EnsureInteractionSchemaAsync(CancellationToken cancellationToken) {
+        string ddl = $"""
+            CREATE TABLE IF NOT EXISTS {InteractionTableName} (
+                ts DateTime64(3, 'UTC'),
+                node_id LowCardinality(String),
+                zone LowCardinality(String),
+                kind LowCardinality(String),
+                tier UInt8,
+                outcome LowCardinality(String),
+                reason LowCardinality(String),
+                client_ip String,
+                asn UInt32 DEFAULT 0,
+                country LowCardinality(String),
+                event_count UInt32 DEFAULT 0,
+                path_length Float64 DEFAULT 0,
+                straight_line Float64 DEFAULT 0,
+                duration_ms UInt32 DEFAULT 0,
+                time_to_first_ms UInt32 DEFAULT 0,
+                timing_jitter_ms Float64 DEFAULT 0
+            )
+            ENGINE = MergeTree
+            PARTITION BY toYYYYMMDD(ts)
+            ORDER BY (zone, ts)
+            TTL toDateTime(ts) + INTERVAL {this.options.RetentionDays} DAY
+            """;
+
+        await ExecuteAsync(ddl, body: null, cancellationToken);
+    }
+
+    public async Task InsertInteractionsAsync(
+        IReadOnlyList<Ingestion.InteractionRow> rows, CancellationToken cancellationToken) {
+        StringBuilder ndjson = new(rows.Count * 256);
+        foreach(Ingestion.InteractionRow row in rows)
+            ndjson.AppendLine(JsonSerializer.Serialize(row, RowSerializerOptions));
+
+        await ExecuteAsync(
+            $"INSERT INTO {InteractionTableName} FORMAT JSONEachRow",
             ndjson.ToString(),
             cancellationToken);
     }

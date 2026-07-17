@@ -50,6 +50,46 @@ pub struct LogRecord {
     pub asn: Option<u32>,
 }
 
+/// One human-verification interaction (challenge page or embeddable widget),
+/// emitted on verify with its outcome and — for Tier 2 — the behavioural
+/// features the server scored. This is the labelled-ish dataset the ML layer
+/// (Phase B onward) trains on: features + weak label (pass/fail). Shipped on the
+/// same fire-and-forget path as request logs, to a separate ingest endpoint.
+#[derive(Debug, Clone, Serialize)]
+pub struct InteractionRecord {
+    pub ts_ms: u64,
+    /// Zone host the interaction was served for.
+    pub zone: String,
+    /// `"challenge"` (full-page) or `"widget"` (embeddable).
+    pub kind: &'static str,
+    /// Challenge tier served (1 = PoW only, 2 = elevated + behaviour). Inferred
+    /// from whether behavioural telemetry accompanied the attempt.
+    pub tier: u8,
+    /// `"pass"` or `"fail"`.
+    pub outcome: &'static str,
+    /// Machine reason on failure (SolveError code); absent on pass.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<&'static str>,
+    pub client_ip: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asn: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
+    // ── Behavioural features (present for Tier 2 attempts) ──
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_length: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub straight_line: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_to_first_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timing_jitter_ms: Option<f64>,
+}
+
 pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -57,20 +97,22 @@ pub fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// Bounded drop-oldest queue between the request path and the shipper task.
+/// Bounded drop-oldest queue between the request path and a shipper task.
+/// Generic over the record type so request logs and interaction telemetry share
+/// one implementation.
 ///
 /// `push` runs on the hot path: it takes the lock for a constant-time
 /// `VecDeque` operation only. Lost records are counted, never silently
 /// discarded.
-pub struct LogBuffer {
-    queue: Mutex<VecDeque<LogRecord>>,
+pub struct LogBuffer<T> {
+    queue: Mutex<VecDeque<T>>,
     notify: Notify,
     dropped: AtomicU64,
     capacity: usize,
     flush_threshold: usize,
 }
 
-impl LogBuffer {
+impl<T> LogBuffer<T> {
     pub fn new(capacity: usize, flush_threshold: usize) -> Self {
         Self {
             queue: Mutex::new(VecDeque::with_capacity(capacity.min(FLUSH_THRESHOLD * 4))),
@@ -81,7 +123,7 @@ impl LogBuffer {
         }
     }
 
-    pub fn push(&self, record: LogRecord) {
+    pub fn push(&self, record: T) {
         let over_threshold;
         {
             let mut queue = self.queue.lock().expect("log buffer lock poisoned");
@@ -98,7 +140,7 @@ impl LogBuffer {
     }
 
     /// Removes and returns up to `max` records, oldest first.
-    pub fn drain(&self, max: usize) -> Vec<LogRecord> {
+    pub fn drain(&self, max: usize) -> Vec<T> {
         let mut queue = self.queue.lock().expect("log buffer lock poisoned");
         let take = queue.len().min(max);
         queue.drain(..take).collect()
@@ -123,7 +165,7 @@ impl LogBuffer {
     }
 }
 
-impl Default for LogBuffer {
+impl<T> Default for LogBuffer<T> {
     fn default() -> Self {
         Self::new(BUFFER_CAPACITY, FLUSH_THRESHOLD)
     }
@@ -131,10 +173,10 @@ impl Default for LogBuffer {
 
 /// `Some` when `VEIL_ANALYTICS_URL` is configured — emission is opt-in so a
 /// node without an analytics endpoint pays nothing on the request path.
-pub fn buffer_from_env() -> Option<Arc<LogBuffer>> {
+pub fn buffer_from_env<T>() -> Option<Arc<LogBuffer<T>>> {
     std::env::var("VEIL_ANALYTICS_URL")
         .is_ok()
-        .then(|| Arc::new(LogBuffer::default()))
+        .then(|| Arc::new(LogBuffer::<T>::default()))
 }
 
 #[cfg(test)]
@@ -217,5 +259,48 @@ mod tests {
         assert_eq!(json["duration_ms"], 3);
         // absent optionals are omitted, not null
         assert!(json.get("rule_id").is_none());
+    }
+
+    fn interaction(outcome: &'static str) -> InteractionRecord {
+        InteractionRecord {
+            ts_ms: 1_770_000_000_000,
+            zone: "example.com".to_owned(),
+            kind: "widget",
+            tier: 2,
+            outcome,
+            reason: None,
+            client_ip: "192.0.2.1".to_owned(),
+            asn: Some(64500),
+            country: Some("TR".to_owned()),
+            event_count: Some(40),
+            path_length: Some(520.0),
+            straight_line: Some(180.0),
+            duration_ms: Some(1400),
+            time_to_first_ms: Some(220),
+            timing_jitter_ms: Some(9.0),
+        }
+    }
+
+    #[test]
+    fn interaction_serializes_in_ingest_shape() {
+        let json = serde_json::to_value(interaction("pass")).unwrap();
+        assert_eq!(json["kind"], "widget");
+        assert_eq!(json["tier"], 2);
+        assert_eq!(json["outcome"], "pass");
+        assert_eq!(json["event_count"], 40);
+        assert_eq!(json["asn"], 64500);
+        assert_eq!(json["country"], "TR");
+        // absent optionals omitted, not null
+        assert!(json.get("reason").is_none());
+    }
+
+    #[test]
+    fn generic_buffer_holds_interactions() {
+        let buffer: LogBuffer<InteractionRecord> = LogBuffer::new(2, 100);
+        buffer.push(interaction("pass"));
+        buffer.push(interaction("fail"));
+        buffer.push(interaction("pass"));
+        assert_eq!(buffer.dropped(), 1);
+        assert_eq!(buffer.drain(10).len(), 2);
     }
 }

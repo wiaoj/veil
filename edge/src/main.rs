@@ -87,8 +87,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let (Some(buffer), Some(settings)) =
         (state.analytics.clone(), analytics::shipper::settings_from_env())
     {
-        info!(ingest = %settings.ingest_url, "analytics log shipping enabled");
-        tokio::spawn(analytics::shipper::run(buffer, settings));
+        info!(base = %settings.base_url, "analytics log shipping enabled");
+        tokio::spawn(analytics::shipper::run(
+            buffer,
+            settings,
+            analytics::shipper::REQUEST_LOG_ENDPOINT,
+        ));
+    }
+
+    // Human-verification interaction telemetry — same opt-in, separate stream
+    // (feeds the ML layer). Lower volume than request logs.
+    if let (Some(buffer), Some(settings)) =
+        (state.interactions.clone(), analytics::shipper::settings_from_env())
+    {
+        tokio::spawn(analytics::shipper::run(
+            buffer,
+            settings,
+            analytics::shipper::INTERACTION_ENDPOINT,
+        ));
     }
 
     // Config reconcile poller (opt-in, control-plane mode only) — periodically

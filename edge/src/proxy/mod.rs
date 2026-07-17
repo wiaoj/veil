@@ -21,7 +21,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tracing::{debug, info, warn};
 
 use crate::acme::{AcmeStore, ChallengeSet, ACME_PUSH_PATH, HTTP01_PATH_PREFIX};
-use crate::analytics::{self, LogBuffer, LogRecord};
+use crate::analytics::{self, InteractionRecord, LogBuffer, LogRecord};
+use crate::challenge::behavior::BehaviorTelemetry;
 use crate::challenge::{ChallengeEngine, VerifySolutionRequest, CHALLENGE_VERIFY_PATH};
 use crate::config::cache;
 use crate::config::store::ConfigStore;
@@ -100,7 +101,10 @@ pub struct AppState {
     pub config_cache_path: Option<PathBuf>,
     /// Request log buffer drained by the analytics shipper. `None` disables
     /// emission entirely (no `VEIL_ANALYTICS_URL`).
-    pub analytics: Option<Arc<LogBuffer>>,
+    pub analytics: Option<Arc<LogBuffer<LogRecord>>>,
+    /// Human-verification interaction telemetry buffer (challenge / widget
+    /// verify outcomes + behavioural features). Same opt-in as `analytics`.
+    pub interactions: Option<Arc<LogBuffer<InteractionRecord>>>,
     /// Active ACME HTTP-01 challenges published by the control plane.
     pub acme: AcmeStore,
     /// SNI certificate resolver fed by config pushes. `None` when no HTTPS
@@ -128,7 +132,8 @@ impl AppState {
             cache::path_from_env(),
             push_key_from_env(),
         );
-        state.analytics = analytics::buffer_from_env();
+        state.analytics = analytics::buffer_from_env::<LogRecord>();
+        state.interactions = analytics::buffer_from_env::<InteractionRecord>();
         state.geo = crate::geoip::GeoDb::from_env();
         state.reputation = crate::reputation::IpReputation::from_env();
         state.webhook = crate::webhook::WebhookNotifier::from_env();
@@ -195,6 +200,7 @@ impl AppState {
             signature_header,
             config_cache_path,
             analytics: None,
+            interactions: None,
             acme: AcmeStore::new(),
             cert_resolver: None,
             metrics: crate::metrics::Metrics::new(),
@@ -670,7 +676,63 @@ async fn handle_challenge_verify(
         "challenge verify attempt"
     );
 
-    state.challenge.verify_solution(&solution, ctx.client_ip)
+    let response = state.challenge.verify_solution(&solution, ctx.client_ip);
+    record_interaction(
+        state,
+        ctx,
+        "challenge",
+        response.status() == StatusCode::OK,
+        None,
+        &solution.behavior,
+    );
+    response
+}
+
+/// Emits one human-verification interaction to the telemetry stream (best-effort;
+/// no-op when analytics is disabled). Captures the outcome and, for Tier 2, the
+/// behavioural features the server scored — the labelled-ish data the ML layer
+/// (Phase B) trains on.
+fn record_interaction(
+    state: &AppState,
+    ctx: &crate::pipeline::RequestContext,
+    kind: &'static str,
+    passed: bool,
+    reason: Option<&'static str>,
+    behavior: &Option<BehaviorTelemetry>,
+) {
+    let Some(buffer) = &state.interactions else {
+        return;
+    };
+    let (event_count, path_length, straight_line, duration_ms, time_to_first_ms, timing_jitter_ms) =
+        match behavior {
+            Some(b) => (
+                Some(b.event_count),
+                Some(b.path_length),
+                Some(b.straight_line),
+                Some(b.duration_ms),
+                Some(b.time_to_first_ms),
+                Some(b.timing_jitter_ms),
+            ),
+            None => (None, None, None, None, None, None),
+        };
+    buffer.push(InteractionRecord {
+        ts_ms: analytics::now_ms(),
+        zone: ctx.host.clone(),
+        kind,
+        // Tier 2 attempts carry behavioural telemetry; Tier 1 do not.
+        tier: if behavior.is_some() { 2 } else { 1 },
+        outcome: if passed { "pass" } else { "fail" },
+        reason,
+        client_ip: ctx.client_ip.to_string(),
+        asn: ctx.asn,
+        country: ctx.country.clone(),
+        event_count,
+        path_length,
+        straight_line,
+        duration_ms,
+        time_to_first_ms,
+        timing_jitter_ms,
+    });
 }
 
 // ── Embeddable widget endpoints (self-hosted, form-embed / siteverify) ──
@@ -797,11 +859,17 @@ async fn handle_widget_verify(
         .challenge
         .verify_widget(&body.sitekey, &body.nonce, &body.counter, &body.behavior)
     {
-        Ok(token) => json_response(StatusCode::OK, &format!(r#"{{"token":"{token}"}}"#)),
-        Err(err) => json_response(
-            StatusCode::FORBIDDEN,
-            &format!(r#"{{"success":false,"error-codes":["{}"]}}"#, err.code()),
-        ),
+        Ok(token) => {
+            record_interaction(state, ctx, "widget", true, None, &body.behavior);
+            json_response(StatusCode::OK, &format!(r#"{{"token":"{token}"}}"#))
+        }
+        Err(err) => {
+            record_interaction(state, ctx, "widget", false, Some(err.code()), &body.behavior);
+            json_response(
+                StatusCode::FORBIDDEN,
+                &format!(r#"{{"success":false,"error-codes":["{}"]}}"#, err.code()),
+            )
+        }
     }
 }
 

@@ -18,6 +18,10 @@ public static class IngestEndpoints {
         app.MapPost("/ingest", Handle)
            .WithName("IngestRequestLogs")
            .ExcludeFromDescription();
+
+        app.MapPost("/ingest/interactions", HandleInteractions)
+           .WithName("IngestInteractions")
+           .ExcludeFromDescription();
     }
 
     private static async Task<IHttpResult> Handle(
@@ -50,6 +54,35 @@ public static class IngestEndpoints {
         // Live, in-memory tap for AI anomaly analysis. No-op when intelligence is
         // disabled; otherwise just lock-guarded counter bumps — never blocks ingest.
         analyzer.Observe(rows);
+
+        return Results.Accepted(value: new IngestResponse(rows.Count));
+    }
+
+    private static async Task<IHttpResult> HandleInteractions(
+        InteractionIngestRequest payload,
+        HttpRequest request,
+        IEdgeNodeTokenVerifier tokenVerifier,
+        InteractionQueue queue,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken) {
+
+        string? token = request.Headers[NodeTokenHeader].FirstOrDefault();
+        if(string.IsNullOrEmpty(token))
+            return Results.Unauthorized();
+
+        switch(await tokenVerifier.VerifyAsync(payload.NodeId, token, cancellationToken)) {
+            case EdgeNodeTokenVerdict.Invalid:
+                return Results.Unauthorized();
+            case EdgeNodeTokenVerdict.Disabled:
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        if(payload.Records is not { Count: > 0 })
+            return Results.Accepted(value: new IngestResponse(0));
+
+        List<InteractionRow> rows = InteractionNormalizer.Normalize(
+            payload.NodeId, payload.Records, timeProvider.GetUtcNow());
+        queue.Enqueue(rows);
 
         return Results.Accepted(value: new IngestResponse(rows.Count));
     }
