@@ -1,7 +1,16 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Pencil,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
-import type { Rule, ZoneDetail } from '#/lib/api'
+import type { Rule, WidgetRotateResult, ZoneDetail } from '#/lib/api'
 import { apiSend } from '#/lib/api'
 import { useApiData } from '#/lib/useApiData'
 import { PageState } from '@/components/PageState'
@@ -147,7 +156,7 @@ function ZoneDetailPage() {
           </CardHeader>
           <CardContent className="text-muted-foreground text-sm">
             {z.challenge.enabled
-              ? `Aktif · zorluk ${z.challenge.difficulty} · token ${z.challenge.expirationSeconds}sn${z.challenge.requireCaptcha ? ' · CAPTCHA fallback' : ''}`
+              ? `Aktif · zorluk ${z.challenge.difficulty} · token ${z.challenge.expirationSeconds}sn${z.challenge.requireCaptcha ? ' · görünür doğrulama' : ''}`
               : 'Devre dışı'}
           </CardContent>
         </Card>
@@ -215,6 +224,8 @@ function ZoneDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <WidgetCard zone={z} busy={busy} mutate={mutate} onChanged={() => setBump((n) => n + 1)} />
 
       <div className="space-y-2">
         <h2 className="text-sm font-semibold">Kurallar ({z.rules.length})</h2>
@@ -481,16 +492,22 @@ function EditChallengeDialog({
               disabled={!enabled}
             />
           </div>
-          <Label className="cursor-pointer">
-            <input
-              type="checkbox"
-              className="accent-primary size-4"
-              checked={requireCaptcha}
-              onChange={(e) => setRequireCaptcha(e.target.checked)}
-              disabled={!enabled}
-            />
-            CAPTCHA fallback
-          </Label>
+          <div className="space-y-1">
+            <Label className="cursor-pointer">
+              <input
+                type="checkbox"
+                className="accent-primary size-4"
+                checked={requireCaptcha}
+                onChange={(e) => setRequireCaptcha(e.target.checked)}
+                disabled={!enabled}
+              />
+              Yüksek riskte görünür doğrulama
+            </Label>
+            <p className="text-muted-foreground text-xs">
+              Tier-2'de görünür bir "insan olduğumu doğrula" kutucuğu gösterilir. Tamamen
+              self-hosted (PoW + davranış) — üçüncü tarafa (CAPTCHA servisi) bağımlılık yoktur.
+            </p>
+          </div>
           <DialogFooter>
             <Button type="submit" disabled={busy}>
               Kaydet
@@ -499,6 +516,166 @@ function EditChallengeDialog({
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function WidgetCard({
+  zone,
+  busy,
+  mutate,
+  onChanged,
+}: {
+  zone: ZoneDetail
+  busy: boolean
+  mutate: (action: () => Promise<unknown>) => Promise<void>
+  onChanged: () => void
+}) {
+  const w = zone.widget
+  const [rotating, setRotating] = useState(false)
+  const [revealed, setRevealed] = useState<string | null>(null)
+  const [copied, setCopied] = useState<string | null>(null)
+
+  const origin = `https://${zone.hostname}`
+  const embed =
+    `<div class="veil-widget" data-sitekey="${w.siteKey}"` +
+    (w.theme !== 'auto' ? ` data-theme="${w.theme}"` : '') +
+    `></div>\n<script src="${origin}/_veil/widget.js" async></script>`
+  const siteverify =
+    `POST ${origin}/_veil/siteverify\n` +
+    `{ "secret": "<SECRET>", "response": "<form: veil-response>" }`
+
+  function copy(text: string, id: string) {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(id)
+      setTimeout(() => setCopied(null), 1500)
+    })
+  }
+
+  async function rotate() {
+    if (w.hasSecret && !window.confirm('Yeni anahtar üretilsin mi? Eski secret geçersiz olur.')) return
+    setRotating(true)
+    try {
+      const res = await apiSend<WidgetRotateResult>(`/v1/zones/${zone.id}/widget/rotate`, 'POST')
+      if (res) setRevealed(res.secret)
+      onChanged()
+    } finally {
+      setRotating(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between">
+        <CardTitle className="text-sm">Bot koruması (Widget)</CardTitle>
+        <div className="flex items-center gap-2">
+          {w.enabled && (
+            <Select
+              value={w.theme}
+              disabled={busy}
+              onChange={(e) =>
+                mutate(() =>
+                  apiSend(`/v1/zones/${zone.id}/widget`, 'PUT', {
+                    enabled: true,
+                    theme: e.target.value,
+                  }),
+                )
+              }
+            >
+              <option value="auto">auto</option>
+              <option value="light">light</option>
+              <option value="dark">dark</option>
+            </Select>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              mutate(() =>
+                apiSend(`/v1/zones/${zone.id}/widget`, 'PUT', {
+                  enabled: !w.enabled,
+                  theme: w.theme,
+                }),
+              )
+            }
+          >
+            {w.enabled ? 'Devre dışı bırak' : 'Etkinleştir'}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {!w.enabled ? (
+          <p className="text-muted-foreground">
+            Kapalı. Etkinleştirip anahtar üretince, formuna gömebileceğin tamamen self-hosted
+            (Cloudflare'siz) bir "insanım" widget'ı elde edersin.
+          </p>
+        ) : !w.hasSecret ? (
+          <div className="space-y-2">
+            <p className="text-muted-foreground">
+              Henüz anahtar yok. Başlamak için bir site key + secret üret.
+            </p>
+            <Button size="sm" disabled={rotating} onClick={() => void rotate()}>
+              {rotating ? 'Üretiliyor…' : 'Anahtar üret'}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <div className="text-muted-foreground mb-1 text-xs">Site key</div>
+              <code className="bg-muted block rounded px-2 py-1 font-mono text-xs break-all">
+                {w.siteKey}
+              </code>
+            </div>
+
+            <div>
+              <div className="text-muted-foreground mb-1 flex items-center justify-between text-xs">
+                <span>Formuna yapıştır</span>
+                <button
+                  type="button"
+                  className="hover:text-foreground inline-flex items-center gap-1"
+                  onClick={() => copy(embed, 'embed')}
+                >
+                  {copied === 'embed' ? <Check className="size-3" /> : <Copy className="size-3" />}{' '}
+                  kopyala
+                </button>
+              </div>
+              <pre className="bg-muted overflow-x-auto rounded p-2 font-mono text-xs whitespace-pre-wrap">
+                {embed}
+              </pre>
+            </div>
+
+            <div>
+              <div className="text-muted-foreground mb-1 text-xs">
+                Backend doğrulaması (siteverify)
+              </div>
+              <pre className="bg-muted overflow-x-auto rounded p-2 font-mono text-xs whitespace-pre-wrap">
+                {siteverify}
+              </pre>
+            </div>
+
+            {revealed && (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2">
+                <div className="mb-1 flex items-center justify-between text-xs font-medium text-amber-700 dark:text-amber-400">
+                  <span>Yeni secret — şimdi kopyala, bir daha gösterilmeyecek</span>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1"
+                    onClick={() => copy(revealed, 'secret')}
+                  >
+                    {copied === 'secret' ? <Check className="size-3" /> : <Copy className="size-3" />}
+                  </button>
+                </div>
+                <code className="block font-mono text-xs break-all">{revealed}</code>
+              </div>
+            )}
+
+            <Button size="sm" variant="outline" disabled={rotating} onClick={() => void rotate()}>
+              <RefreshCw className="size-3.5" /> {rotating ? 'Üretiliyor…' : 'Secret yenile'}
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

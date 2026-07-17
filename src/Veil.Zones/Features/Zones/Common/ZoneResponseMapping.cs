@@ -63,4 +63,13 @@ public static class ZoneResponseMapping {
             challenge.RequireCaptchaOnHighRisk,
             challenge.RiskThreshold);
     }
+
+    public static WidgetConfigResponse ToResponse(this WidgetConfig widget) {
+        // Secret is never returned — only whether one has been provisioned.
+        return new WidgetConfigResponse(
+            widget.Enabled,
+            widget.SiteKey,
+            widget.Theme,
+            !string.IsNullOrEmpty(widget.Secret));
+    }
 }

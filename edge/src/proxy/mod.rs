@@ -32,11 +32,21 @@ use crate::pipeline::rate_limit::{InMemoryLimiter, RateLimiter};
 use crate::pipeline::router::{BufferedClient, UpstreamClient};
 use crate::pipeline::{inspector, router, rules, signatures, Verdict};
 use crate::response::{
-    forbidden, gateway_error, json_response, rate_limited, text, GatewayReason, ProxyBody,
+    forbidden, gateway_error, javascript, json_response, rate_limited, text, GatewayReason,
+    ProxyBody,
 };
 
 /// Reserved path where the control plane pushes config updates at runtime.
 pub const CONFIG_PUSH_PATH: &str = "/_veil/internal/config";
+
+/// Reserved paths for the embeddable bot-verification widget (self-hosted).
+pub const WIDGET_SCRIPT_PATH: &str = "/_veil/widget.js";
+pub const WIDGET_CHALLENGE_PATH: &str = "/_veil/widget/challenge";
+pub const WIDGET_VERIFY_PATH: &str = "/_veil/widget/verify";
+pub const SITEVERIFY_PATH: &str = "/_veil/siteverify";
+
+/// The embeddable widget script, served verbatim at [`WIDGET_SCRIPT_PATH`].
+const WIDGET_JS: &str = include_str!("../../templates/widget.js");
 
 /// Default header carrying the HMAC-SHA256 signature of the push body.
 /// Overridable via `VEIL_PUSH_SIGNATURE_HEADER` (must match the control
@@ -360,6 +370,20 @@ pub async fn handle(
         return handle_challenge_verify(req, &ctx, &state).await;
     }
 
+    // ── Reserved paths: embeddable bot-verification widget ────────────
+    if req.method() == Method::GET && ctx.path == WIDGET_SCRIPT_PATH {
+        return handle_widget_script(&ctx, &state);
+    }
+    if req.method() == Method::POST && ctx.path == WIDGET_CHALLENGE_PATH {
+        return handle_widget_challenge(req, &ctx, &state).await;
+    }
+    if req.method() == Method::POST && ctx.path == WIDGET_VERIFY_PATH {
+        return handle_widget_verify(req, &ctx, &state).await;
+    }
+    if req.method() == Method::POST && ctx.path == SITEVERIFY_PATH {
+        return handle_siteverify(req, &ctx, &state).await;
+    }
+
     // ── Reserved path: control-plane config push ──────────────────────
     if ctx.path == CONFIG_PUSH_PATH && req.method() == Method::POST {
         return handle_config_push(req, &ctx, &state).await;
@@ -647,6 +671,182 @@ async fn handle_challenge_verify(
     );
 
     state.challenge.verify_solution(&solution, ctx.client_ip)
+}
+
+// ── Embeddable widget endpoints (self-hosted, form-embed / siteverify) ──
+
+#[derive(serde::Deserialize)]
+struct WidgetChallengeBody {
+    sitekey: String,
+}
+
+#[derive(serde::Deserialize)]
+struct WidgetVerifyBody {
+    sitekey: String,
+    nonce: String,
+    counter: String,
+    #[serde(default)]
+    behavior: Option<crate::challenge::behavior::BehaviorTelemetry>,
+}
+
+#[derive(serde::Deserialize)]
+struct SiteverifyBody {
+    secret: String,
+    response: String,
+}
+
+/// Reads and JSON-parses a small request body (bounded to defuse abuse). Returns
+/// the parsed value, or a ready error response on read/size/parse failure.
+async fn read_json_body<T: serde::de::DeserializeOwned>(
+    req: Request<Incoming>,
+) -> Result<T, Response<ProxyBody>> {
+    let bytes = match req.collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(_) => {
+            return Err(json_response(
+                StatusCode::BAD_REQUEST,
+                r#"{"error":"body_read_failed"}"#,
+            ));
+        }
+    };
+    if bytes.len() > 4096 {
+        return Err(json_response(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            r#"{"error":"body_too_large"}"#,
+        ));
+    }
+    serde_json::from_slice(&bytes)
+        .map_err(|_| json_response(StatusCode::BAD_REQUEST, r#"{"error":"invalid_json"}"#))
+}
+
+/// `GET /_veil/widget.js` — serve the embeddable widget script, but only for a
+/// zone that has the widget enabled (a 404 otherwise avoids advertising it).
+fn handle_widget_script(
+    ctx: &crate::pipeline::RequestContext,
+    state: &AppState,
+) -> Response<ProxyBody> {
+    let config = state.config.load();
+    let enabled = config
+        .resolve_zone(&ctx.host)
+        .and_then(|z| z.widget.as_ref())
+        .is_some_and(|w| w.enabled);
+    if enabled {
+        javascript(WIDGET_JS)
+    } else {
+        text(StatusCode::NOT_FOUND, "404 widget not enabled\n")
+    }
+}
+
+/// `POST /_veil/widget/challenge` — mint a nonce for the widget (JSON, no HTML
+/// page). Scoped to the host's zone and gated on the sitekey.
+async fn handle_widget_challenge(
+    req: Request<Incoming>,
+    ctx: &crate::pipeline::RequestContext,
+    state: &AppState,
+) -> Response<ProxyBody> {
+    let body: WidgetChallengeBody = match read_json_body(req).await {
+        Ok(b) => b,
+        Err(resp) => return resp,
+    };
+    let config = state.config.load();
+    let Some(zone) = config.resolve_zone(&ctx.host) else {
+        return widget_not_found();
+    };
+    let Some(widget) = zone.widget.as_ref().filter(|w| w.enabled) else {
+        return widget_not_found();
+    };
+    if !constant_time_eq(body.sitekey.as_bytes(), widget.site_key.as_bytes()) {
+        return json_response(StatusCode::FORBIDDEN, r#"{"error":"invalid_sitekey"}"#);
+    }
+
+    let issued = state.challenge.issue_nonce(ctx, zone.challenge.as_ref());
+    json_response(
+        StatusCode::OK,
+        &format!(
+            r#"{{"nonce":"{}","difficulty":{},"tier":{}}}"#,
+            issued.nonce_hex,
+            issued.difficulty,
+            issued.tier.as_u8()
+        ),
+    )
+}
+
+/// `POST /_veil/widget/verify` — validate the widget's PoW solution and return a
+/// single-use response token (no cookie; the widget injects it into the form).
+async fn handle_widget_verify(
+    req: Request<Incoming>,
+    ctx: &crate::pipeline::RequestContext,
+    state: &AppState,
+) -> Response<ProxyBody> {
+    let body: WidgetVerifyBody = match read_json_body(req).await {
+        Ok(b) => b,
+        Err(resp) => return resp,
+    };
+    let config = state.config.load();
+    let Some(zone) = config.resolve_zone(&ctx.host) else {
+        return widget_not_found();
+    };
+    let Some(widget) = zone.widget.as_ref().filter(|w| w.enabled) else {
+        return widget_not_found();
+    };
+    if !constant_time_eq(body.sitekey.as_bytes(), widget.site_key.as_bytes()) {
+        return json_response(StatusCode::FORBIDDEN, r#"{"error":"invalid_sitekey"}"#);
+    }
+
+    match state
+        .challenge
+        .verify_widget(&body.sitekey, &body.nonce, &body.counter, &body.behavior)
+    {
+        Ok(token) => json_response(StatusCode::OK, &format!(r#"{{"token":"{token}"}}"#)),
+        Err(err) => json_response(
+            StatusCode::FORBIDDEN,
+            &format!(r#"{{"success":false,"error-codes":["{}"]}}"#, err.code()),
+        ),
+    }
+}
+
+/// `POST /_veil/siteverify` — the origin backend confirms a widget token with its
+/// secret. Turnstile-style: always `200`, with `{"success":bool}`.
+async fn handle_siteverify(
+    req: Request<Incoming>,
+    ctx: &crate::pipeline::RequestContext,
+    state: &AppState,
+) -> Response<ProxyBody> {
+    let body: SiteverifyBody = match read_json_body(req).await {
+        Ok(b) => b,
+        Err(resp) => return resp,
+    };
+    let config = state.config.load();
+    let Some(widget) = config
+        .resolve_zone(&ctx.host)
+        .and_then(|z| z.widget.as_ref())
+        .filter(|w| w.enabled)
+    else {
+        return siteverify_fail("widget-disabled");
+    };
+    if !constant_time_eq(body.secret.as_bytes(), widget.secret.as_bytes()) {
+        return siteverify_fail("invalid-secret");
+    }
+    if state
+        .challenge
+        .verify_widget_token(&body.response, &widget.site_key)
+    {
+        json_response(StatusCode::OK, r#"{"success":true}"#)
+    } else {
+        siteverify_fail("invalid-input-response")
+    }
+}
+
+fn widget_not_found() -> Response<ProxyBody> {
+    json_response(StatusCode::NOT_FOUND, r#"{"error":"widget_not_found"}"#)
+}
+
+/// A Turnstile-style siteverify failure — HTTP `200` with `success:false`.
+fn siteverify_fail(code: &str) -> Response<ProxyBody> {
+    json_response(
+        StatusCode::OK,
+        &format!(r#"{{"success":false,"error-codes":["{code}"]}}"#),
+    )
 }
 
 /// Handle `POST /_veil/internal/config` — authenticate the pusher (node

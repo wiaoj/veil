@@ -44,6 +44,16 @@ public sealed record ChallengeConfigRequest(
     int RiskThreshold = 70);
 
 /// <summary>
+/// Enable/disable the embeddable bot-verification widget and set its theme.
+/// Keys are managed separately (rotate endpoint), never sent here.
+/// </summary>
+/// <param name="Enabled">Whether the widget is active for this zone.</param>
+/// <param name="Theme">Visual theme hint: "auto" (default), "light" or "dark".</param>
+public sealed record WidgetConfigRequest(
+    bool Enabled = false,
+    string? Theme = null);
+
+/// <summary>
 /// Flat wire representation of a rule condition. <paramref name="Type"/>
 /// selects the condition kind; the remaining fields are populated per kind.
 /// </summary>

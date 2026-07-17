@@ -10,6 +10,8 @@ public sealed class Zone : Aggregate<ZoneId> {
     public Hostname Hostname { get; private set; }
     public UpstreamConfig Upstream { get; private set; }
     public ChallengeConfig Challenge { get; private set; }
+    /// <summary>Embeddable self-hosted bot-verification widget credentials. Off by default.</summary>
+    public WidgetConfig Widget { get; private set; } = WidgetConfig.Disabled;
     /// <summary>Managed WAF signature toggles (OWASP-CRS-style). Off by default.</summary>
     public ManagedRulesConfig ManagedRules { get; private set; } = ManagedRulesConfig.Disabled;
     /// <summary>Opt-in edge response caching (conservative RFC 7234). Off by default.</summary>
@@ -163,6 +165,12 @@ public sealed class Zone : Aggregate<ZoneId> {
 
     public Result<Success> UpdateChallenge(ChallengeConfig challenge) {
         this.Challenge = challenge;
+        RaiseDomainEvent(new ZoneConfigChangedDomainEvent(this.Id));
+        return Result.Success();
+    }
+
+    public Result<Success> UpdateWidget(WidgetConfig widget) {
+        this.Widget = widget;
         RaiseDomainEvent(new ZoneConfigChangedDomainEvent(this.Id));
         return Result.Success();
     }

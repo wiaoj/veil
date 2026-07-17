@@ -34,14 +34,28 @@ public sealed record EdgeZoneConfig(
     [property: JsonPropertyName("shadow"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     bool Shadow = false,
     [property: JsonPropertyName("challenge"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    EdgeChallengeConfig? Challenge = null);
+    EdgeChallengeConfig? Challenge = null,
+    [property: JsonPropertyName("widget"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    EdgeWidgetConfig? Widget = null);
 
 /// <summary>Per-zone challenge knobs the edge consumes: Tier-2 risk threshold,
-/// base PoW difficulty and pass-token lifetime.</summary>
+/// base PoW difficulty, pass-token lifetime, and whether Tier 2 is served as a
+/// visible self-hosted interaction widget (the "verify I'm human" checkbox).</summary>
 public sealed record EdgeChallengeConfig(
     [property: JsonPropertyName("tier2_risk_threshold")] int Tier2RiskThreshold,
     [property: JsonPropertyName("base_difficulty")] int BaseDifficulty,
-    [property: JsonPropertyName("token_ttl_secs")] int TokenTtlSecs);
+    [property: JsonPropertyName("token_ttl_secs")] int TokenTtlSecs,
+    [property: JsonPropertyName("require_interaction")] bool RequireInteraction);
+
+/// <summary>Embeddable bot-verification widget credentials pushed to the edge.
+/// The secret is carried in the snapshot (like TLS keys) so the edge can gate
+/// its <c>/_veil/siteverify</c> endpoint without contacting the control plane.</summary>
+public sealed record EdgeWidgetConfig(
+    [property: JsonPropertyName("site_key")] string SiteKey,
+    [property: JsonPropertyName("secret")] string Secret,
+    [property: JsonPropertyName("enabled")] bool Enabled,
+    [property: JsonPropertyName("theme"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Theme = null);
 
 /// <summary>Presence enables the edge response cache (defaults on the edge side).</summary>
 public sealed record EdgeCacheConfig();
@@ -153,7 +167,19 @@ public static class EdgeConfigSnapshotBuilder {
                 ? new EdgeChallengeConfig(
                     zone.Challenge.RiskThreshold,
                     zone.Challenge.PowDifficulty.Value,
-                    (int)zone.Challenge.TokenTtl.Value.TotalSeconds)
+                    (int)zone.Challenge.TokenTtl.Value.TotalSeconds,
+                    zone.Challenge.RequireCaptchaOnHighRisk)
+                : null;
+
+            // Push the widget only when it is enabled and provisioned with keys;
+            // a paused zone serves nothing, so its widget endpoints stay off too.
+            EdgeWidgetConfig? widget = zone.Status is not ZoneStatus.Paused
+                    && zone.Widget.Enabled && zone.Widget.HasKeys
+                ? new EdgeWidgetConfig(
+                    zone.Widget.SiteKey,
+                    zone.Widget.Secret,
+                    true,
+                    zone.Widget.Theme)
                 : null;
 
             edgeZones.Add(new EdgeZoneConfig(
@@ -165,7 +191,8 @@ public static class EdgeConfigSnapshotBuilder {
                 zone.CacheEnabled ? new EdgeCacheConfig() : null,
                 managed,
                 zone.Shadow,
-                challenge));
+                challenge,
+                widget));
         }
 
         return new EdgeConfigSnapshot(TrustForwardedHeaders: false, edgeZones);

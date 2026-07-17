@@ -77,12 +77,76 @@ pub struct VerifySolutionRequest {
     pub behavior: Option<BehaviorTelemetry>,
 }
 
+/// A freshly issued challenge nonce and the parameters bound to it. Returned by
+/// [`ChallengeEngine::issue_nonce`] and consumed both by the full-page challenge
+/// and the embeddable widget's `/_veil/widget/challenge` endpoint.
+#[derive(Debug, Clone)]
+pub struct IssuedNonce {
+    pub nonce_hex: String,
+    pub difficulty: u32,
+    pub tier: Tier,
+}
+
+/// Widget response-token lifetime (seconds). Short by design: the token is
+/// injected into a form and meant to be verified promptly by the origin backend.
+pub const WIDGET_TOKEN_TTL: u32 = 300;
+
+/// A challenge-solution verification failure. Maps to the HTTP responses the
+/// full-page verify endpoint returns, and to a Turnstile-style `error-codes`
+/// entry for the widget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SolveError {
+    UnknownNonce,
+    InvalidNonce,
+    InvalidCounter,
+    InvalidSolution,
+    MissingBehavior,
+    BehaviorFailed,
+}
+
+impl SolveError {
+    /// Stable machine code (widget `error-codes` entry).
+    pub fn code(self) -> &'static str {
+        match self {
+            SolveError::UnknownNonce => "unknown_nonce",
+            SolveError::InvalidNonce => "invalid_nonce",
+            SolveError::InvalidCounter => "invalid_counter",
+            SolveError::InvalidSolution => "invalid_solution",
+            SolveError::MissingBehavior => "missing_behavior",
+            SolveError::BehaviorFailed => "behavior_failed",
+        }
+    }
+
+    /// The full-page verify endpoint's response for this failure (unchanged
+    /// statuses + localised detail).
+    fn response(self) -> Response<ProxyBody> {
+        let (status, body) = match self {
+            SolveError::UnknownNonce => (StatusCode::FORBIDDEN,
+                r#"{"error":"unknown_nonce","detail":"Nonce bilinmiyor veya süresi dolmuş."}"#),
+            SolveError::InvalidNonce => (StatusCode::BAD_REQUEST,
+                r#"{"error":"invalid_nonce","detail":"Nonce geçersiz hex formatında."}"#),
+            SolveError::InvalidCounter => (StatusCode::BAD_REQUEST,
+                r#"{"error":"invalid_counter","detail":"Counter geçersiz hex formatında."}"#),
+            SolveError::InvalidSolution => (StatusCode::FORBIDDEN,
+                r#"{"error":"invalid_solution","detail":"PoW çözümü geçersiz."}"#),
+            SolveError::MissingBehavior => (StatusCode::FORBIDDEN,
+                r#"{"error":"missing_behavior","detail":"Etkileşim doğrulaması gerekli."}"#),
+            SolveError::BehaviorFailed => (StatusCode::FORBIDDEN,
+                r#"{"error":"behavior_failed","detail":"Etkileşim doğrulaması başarısız."}"#),
+        };
+        json_response(status, body)
+    }
+}
+
 pub struct ChallengeEngine {
     hmac_key: [u8; 32],
     pub difficulty: u32,
     pub cookie_name: String,
     pub cookie_ttl: u32,
     nonce_store: Arc<dyn NonceStore>,
+    /// Consumed widget response-token jtis, for single-use enforcement at
+    /// `/_veil/siteverify` (a token can be verified at most once).
+    consumed_tokens: Arc<dyn NonceStore>,
 }
 
 impl std::fmt::Debug for ChallengeEngine {
@@ -127,6 +191,9 @@ impl ChallengeEngine {
             cookie_name,
             cookie_ttl,
             nonce_store: Arc::new(InMemoryNonceStore::new(nonce_ttl)),
+            consumed_tokens: Arc::new(InMemoryNonceStore::new(
+                Duration::from_secs(u64::from(WIDGET_TOKEN_TTL) + 60),
+            )),
         }
     }
 
@@ -146,22 +213,23 @@ impl ChallengeEngine {
             cookie_name,
             cookie_ttl,
             nonce_store,
+            consumed_tokens: Arc::new(InMemoryNonceStore::new(
+                Duration::from_secs(u64::from(WIDGET_TOKEN_TTL) + 60),
+            )),
         }
     }
 
     // ── Challenge issuance ────────────────────────────────────────────
 
-    /// Generate a nonce and return the challenge page HTML. The PoW
-    /// difficulty is scaled by the request's risk score (Phase 4.2) and
-    /// bound to the nonce, so a client cannot solve below the level it was
-    /// served. When the risk score crosses the zone's Tier 2 threshold the
-    /// page is served as a Tier 2 interaction challenge: elevated PoW plus a
-    /// behavioural check enforced at verification (Phase 4.3).
-    pub fn issue_challenge(
+    /// Generate and register a challenge nonce, risk-scaling the PoW difficulty
+    /// and picking the tier. Shared by the full-page challenge and the widget's
+    /// JSON challenge endpoint so both bind difficulty + tier to the nonce
+    /// identically (a client cannot solve below the level it was served).
+    pub fn issue_nonce(
         &self,
         ctx: &crate::pipeline::RequestContext,
         settings: Option<&ChallengeSettings>,
-    ) -> Response<ProxyBody> {
+    ) -> IssuedNonce {
         let risk = risk::score(ctx);
         let threshold = settings
             .map(|s| s.tier2_risk_threshold)
@@ -179,11 +247,30 @@ impl ChallengeEngine {
 
         let nonce = pow::generate_nonce();
         let nonce_hex = to_hex(&nonce);
-
-        // Track the nonce (replay protection) together with its difficulty, tier
-        // and token TTL, so verification can't be downgraded below what was
-        // issued and the pre-zone verify path honours the zone's token TTL.
         self.nonce_store.insert(&nonce_hex, NonceInfo { difficulty, tier, token_ttl });
+
+        IssuedNonce { nonce_hex, difficulty, tier }
+    }
+
+    /// Generate a nonce and return the challenge page HTML. The PoW
+    /// difficulty is scaled by the request's risk score (Phase 4.2) and
+    /// bound to the nonce, so a client cannot solve below the level it was
+    /// served. When the risk score crosses the zone's Tier 2 threshold the
+    /// page is served as a Tier 2 interaction challenge: elevated PoW plus a
+    /// behavioural check enforced at verification (Phase 4.3).
+    pub fn issue_challenge(
+        &self,
+        ctx: &crate::pipeline::RequestContext,
+        settings: Option<&ChallengeSettings>,
+    ) -> Response<ProxyBody> {
+        let issued = self.issue_nonce(ctx, settings);
+        let tier = issued.tier;
+
+        // Tier 2 can be rendered as a *visible* self-hosted interaction widget
+        // (a "verify I'm human" checkbox) when the zone opts in. Verification is
+        // unchanged — the elevated PoW plus the behavioural telemetry the widget's
+        // click naturally produces; no third-party service is involved.
+        let interactive = tier == Tier::Two && settings.is_some_and(|s| s.require_interaction);
 
         // Visitor-facing copy is localised from Accept-Language / ?locale.
         let lang = ctx.lang();
@@ -191,9 +278,10 @@ impl ChallengeEngine {
 
         let body = TEMPLATE_HTML
             .replace("{logo_svg}", LOGO_SVG)
-            .replace("{nonce}", &nonce_hex)
-            .replace("{difficulty}", &difficulty.to_string())
+            .replace("{nonce}", &issued.nonce_hex)
+            .replace("{difficulty}", &issued.difficulty.to_string())
             .replace("{tier}", &tier.as_u8().to_string())
+            .replace("{interactive}", if interactive { "1" } else { "0" })
             .replace("{lang}", lang.code())
             .replace("{doc_title}", t.doc_title)
             .replace("{heading}", t.heading)
@@ -201,6 +289,9 @@ impl ChallengeEngine {
             .replace("{noscript}", t.noscript)
             .replace("{status_verifying}", t.status_verifying)
             .replace("{hint}", t.hint)
+            .replace("{verify_label}", t.verify_label)
+            .replace("{verify_checking}", t.verify_checking)
+            .replace("{verify_done}", t.verify_done)
             .replace("{footer}", t.footer)
             .replace("{status_redirecting}", t.status_redirecting)
             .replace("{status_almost}", t.status_almost)
@@ -213,70 +304,53 @@ impl ChallengeEngine {
 
     // ── Solution verification ─────────────────────────────────────────
 
+    /// Validate a PoW solution against its bound nonce and consume it. Shared by
+    /// the full-page challenge (`verify_solution`, cookie) and the embeddable
+    /// widget (`verify_widget`, token). Consumes the nonce before the behavioural
+    /// check so a failed Tier 2 attempt can't be brute-forced against it — the
+    /// client must re-solve. Returns the nonce's [`NonceInfo`] on success.
+    fn check_and_consume(
+        &self,
+        nonce: &str,
+        counter_hex: &str,
+        behavior: &Option<BehaviorTelemetry>,
+    ) -> Result<NonceInfo, SolveError> {
+        let info = self.nonce_store.lookup(nonce).ok_or(SolveError::UnknownNonce)?;
+        let nonce_bytes = from_hex(nonce).ok_or(SolveError::InvalidNonce)?;
+        let counter =
+            u64::from_str_radix(counter_hex, 16).map_err(|_| SolveError::InvalidCounter)?;
+
+        if !pow::verify_pow(&nonce_bytes, counter, info.difficulty) {
+            return Err(SolveError::InvalidSolution);
+        }
+
+        // One-time use — consume before scoring the interaction.
+        self.nonce_store.remove(nonce);
+
+        if info.tier == Tier::Two {
+            let telemetry = behavior.as_ref().ok_or(SolveError::MissingBehavior)?;
+            if !behavior::is_human(telemetry) {
+                return Err(SolveError::BehaviorFailed);
+            }
+        }
+
+        Ok(info)
+    }
+
     /// Verify the PoW solution and issue a signed token cookie.
     ///
-    /// Returns `Ok(response_with_cookie)` on success, or `Err(response_403)`.
+    /// Returns a `200` with the pass cookie on success, or the mapped error.
     pub fn verify_solution(
         &self,
         solution: &VerifySolutionRequest,
         client_ip: IpAddr,
     ) -> Response<ProxyBody> {
-        // 1. Check nonce is pending (replay protection) and recover the
-        //    difficulty and tier it was issued at.
-        let Some(info) = self.nonce_store.lookup(&solution.nonce) else {
-            return json_response(
-                StatusCode::FORBIDDEN,
-                r#"{"error":"unknown_nonce","detail":"Nonce bilinmiyor veya süresi dolmuş."}"#,
-            );
-        };
-        let required_difficulty = info.difficulty;
-
-        // 2. Decode nonce and counter
-        let Some(nonce_bytes) = from_hex(&solution.nonce) else {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                r#"{"error":"invalid_nonce","detail":"Nonce geçersiz hex formatında."}"#,
-            );
-        };
-        let Ok(counter) = u64::from_str_radix(&solution.counter, 16) else {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                r#"{"error":"invalid_counter","detail":"Counter geçersiz hex formatında."}"#,
-            );
+        let info = match self.check_and_consume(&solution.nonce, &solution.counter, &solution.behavior) {
+            Ok(info) => info,
+            Err(err) => return err.response(),
         };
 
-        // 3. Verify the PoW at the difficulty bound to this nonce
-        if !pow::verify_pow(&nonce_bytes, counter, required_difficulty) {
-            return json_response(
-                StatusCode::FORBIDDEN,
-                r#"{"error":"invalid_solution","detail":"PoW çözümü geçersiz."}"#,
-            );
-        }
-
-        // 4. Consume the nonce (one-time use). Done before the behavioural
-        //    check so a failed Tier 2 attempt can't be brute-forced against
-        //    the same nonce — the client must reload and re-solve.
-        self.nonce_store.remove(&solution.nonce);
-
-        // 5. Tier 2: the interaction telemetry must look human. The elevated
-        //    PoW above is the hard floor; this raises the cost of a client
-        //    that solves the puzzle but performs no real interaction.
-        if info.tier == Tier::Two {
-            let Some(telemetry) = &solution.behavior else {
-                return json_response(
-                    StatusCode::FORBIDDEN,
-                    r#"{"error":"missing_behavior","detail":"Etkileşim doğrulaması gerekli."}"#,
-                );
-            };
-            if !behavior::is_human(telemetry) {
-                return json_response(
-                    StatusCode::FORBIDDEN,
-                    r#"{"error":"behavior_failed","detail":"Etkileşim doğrulaması başarısız."}"#,
-                );
-            }
-        }
-
-        // 6. Issue signed token cookie (lifetime bound on the nonce).
+        // Issue signed token cookie (lifetime bound on the nonce).
         let token = self.create_token(client_ip, info.tier, info.token_ttl);
         let cookie = format!(
             "{}={}; Path=/; Max-Age={}; SameSite=Lax; HttpOnly",
@@ -290,6 +364,86 @@ impl ChallengeEngine {
             .header("Cache-Control", "no-store")
             .body(crate::response::full(r#"{"ok":true}"#))
             .expect("static response")
+    }
+
+    // ── Embeddable widget (self-hosted, form-embed / siteverify) ──────
+
+    /// Verify a widget PoW solution and mint a single-use response token bound to
+    /// `sitekey`. The token is returned to the widget (not set as a cookie), which
+    /// injects it into the form; the origin backend later confirms it via
+    /// [`ChallengeEngine::verify_widget_token`] at `/_veil/siteverify`.
+    pub fn verify_widget(
+        &self,
+        sitekey: &str,
+        nonce: &str,
+        counter: &str,
+        behavior: &Option<BehaviorTelemetry>,
+    ) -> Result<String, SolveError> {
+        self.check_and_consume(nonce, counter, behavior)?;
+        Ok(self.mint_widget_token(sitekey))
+    }
+
+    /// Token format: `{payload_hex}.{signature_hex}`, payload
+    /// `{"sk":"<sitekey>","exp":<unix>,"jti":"<hex>"}`. The random `jti` makes
+    /// every token distinct and enables single-use enforcement at siteverify.
+    fn mint_widget_token(&self, sitekey: &str) -> String {
+        let exp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before unix epoch")
+            .as_secs()
+            + u64::from(WIDGET_TOKEN_TTL);
+
+        let mut jti = [0u8; 16];
+        getrandom::fill(&mut jti).expect("getrandom failed");
+        let jti_hex = to_hex(&jti);
+
+        let payload_json = format!(r#"{{"sk":"{sitekey}","exp":{exp},"jti":"{jti_hex}"}}"#);
+        let payload_hex = to_hex(payload_json.as_bytes());
+        let sig_hex = to_hex(&self.sign(payload_json.as_bytes()));
+        format!("{payload_hex}.{sig_hex}")
+    }
+
+    /// Verify a widget response token at siteverify time: signature valid, not
+    /// expired, bound to `sitekey`, and not already consumed (single-use).
+    pub fn verify_widget_token(&self, token: &str, sitekey: &str) -> bool {
+        let Some((payload_hex, sig_hex)) = token.split_once('.') else {
+            return false;
+        };
+        let Some(payload_bytes) = from_hex(payload_hex) else {
+            return false;
+        };
+        let Some(sig_bytes) = from_hex(sig_hex) else {
+            return false;
+        };
+        if !self.verify_sig(&payload_bytes, &sig_bytes) {
+            return false;
+        }
+
+        #[derive(serde::Deserialize)]
+        struct Payload {
+            sk: String,
+            exp: u64,
+            jti: String,
+        }
+        let Ok(payload) = serde_json::from_slice::<Payload>(&payload_bytes) else {
+            return false;
+        };
+
+        if payload.sk != sitekey {
+            return false;
+        }
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before unix epoch")
+            .as_secs();
+        if payload.exp <= now {
+            return false;
+        }
+
+        // Single-use: the first siteverify consumes the jti; a replay finds it
+        // already present and is rejected.
+        self.consumed_tokens
+            .insert(&payload.jti, NonceInfo { difficulty: 0, tier: Tier::One, token_ttl: 0 })
     }
 
     // ── Token verification ────────────────────────────────────────────

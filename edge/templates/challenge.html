@@ -163,6 +163,80 @@
       width: 14px;
       height: 14px;
     }
+
+    /* ── Visible interaction widget (self-hosted, Tier 2 opt-in) ─────── */
+    .verify-box {
+      margin-bottom: 1.5rem;
+    }
+
+    .verify-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      width: 100%;
+      padding: 0.85rem 1rem;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.95rem;
+      text-align: left;
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .verify-checkbox:hover {
+      border-color: var(--accent);
+    }
+
+    .verify-box.checking .verify-checkbox,
+    .verify-box.done .verify-checkbox {
+      cursor: default;
+    }
+
+    .verify-tick {
+      flex: 0 0 auto;
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      border: 2px solid var(--text-muted);
+      position: relative;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .verify-box.checking .verify-tick {
+      border-color: var(--accent);
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    .verify-box.done .verify-tick {
+      border-color: var(--success);
+      background: var(--success);
+    }
+
+    .verify-box.done .verify-tick::after {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: 2px;
+      width: 5px;
+      height: 10px;
+      border: solid var(--bg);
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+
+    .verify-box.done .verify-label {
+      color: var(--success);
+      font-weight: 500;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
@@ -190,6 +264,13 @@
       </div>
     </div>
 
+    <div class="verify-box" id="verifyBox" style="display:none;">
+      <button type="button" class="verify-checkbox" id="verifyCheckbox">
+        <span class="verify-tick" id="verifyTick"></span>
+        <span class="verify-label" id="verifyLabel">{verify_label}</span>
+      </button>
+    </div>
+
     <div class="footer">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
@@ -203,6 +284,11 @@
     var NONCE     = "{nonce}";
     var DIFFICULTY = {difficulty};
     var TIER       = {tier};
+    // 1 → Tier 2 is served as a visible "verify I'm human" widget (self-hosted;
+    // the click gates submission). 0 → the invisible passive check.
+    var INTERACTIVE = {interactive};
+    var VERIFY_CHECKING = "{verify_checking}";
+    var VERIFY_DONE     = "{verify_done}";
     var VERIFY_URL = "/_veil/challenge/verify";
     var BATCH_SIZE = 50000;
     // Tier 2: minimum pointer/touch events before a solution is submitted.
@@ -211,6 +297,11 @@
     var fill   = document.getElementById("progressFill");
     var status = document.getElementById("statusText");
     var prompt = document.getElementById("interactPrompt");
+    var verifyBox      = document.getElementById("verifyBox");
+    var verifyCheckbox = document.getElementById("verifyCheckbox");
+    var verifyLabel    = document.getElementById("verifyLabel");
+    // Interactive Tier 2 only: gates submission on an explicit human click.
+    var interacted = false;
 
     // ── Behavioural telemetry (Tier 2 only) ────────────────
     // Captured while the PoW solves; scored server-side. A scripted client
@@ -227,6 +318,23 @@
       window.addEventListener("touchmove", function (e) {
         if (e.touches && e.touches[0]) { onMove(e.touches[0].clientX, e.touches[0].clientY); }
       }, { passive: true });
+    }
+
+    // ── Visible interaction widget (Tier 2 opt-in) ─────────
+    // Swaps the invisible progress view for a "verify I'm human" checkbox. The
+    // PoW still solves in the background; the click gates submission and — via
+    // the pointer movement it takes to reach the box — supplies the behavioural
+    // telemetry the server already scores. No third-party service is involved.
+    if (TIER === 2 && INTERACTIVE === 1) {
+      document.getElementById("progressWrap").style.display = "none";
+      verifyBox.style.display = "block";
+      verifyCheckbox.addEventListener("click", function () {
+        if (interacted) { return; }
+        interacted = true;
+        verifyBox.className = "verify-box checking";
+        verifyLabel.textContent = VERIFY_CHECKING;
+        maybeSubmit();
+      });
     }
 
     function now() {
@@ -270,6 +378,8 @@
     function maybeSubmit() {
       if (submitted || solvedCounter === null) { return; }
       if (TIER === 2 && (!behavior || behavior.count < MIN_EVENTS)) { return; }
+      // Interactive Tier 2 waits for the explicit human click on the widget.
+      if (TIER === 2 && INTERACTIVE === 1 && !interacted) { return; }
       submitted = true;
       submitSolution(solvedCounter, (TIER === 2) ? snapshot() : null);
     }
@@ -381,6 +491,10 @@
       xhr.setRequestHeader("Content-Type", "application/json");
       xhr.onload = function() {
         if (xhr.status === 200) {
+          if (TIER === 2 && INTERACTIVE === 1) {
+            verifyBox.className = "verify-box done";
+            verifyLabel.textContent = VERIFY_DONE;
+          }
           setTimeout(function() { location.reload(); }, 500);
         } else {
           status.textContent = "{status_failed_retry}";

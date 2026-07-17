@@ -278,3 +278,58 @@ fn tier2_failed_behavior_consumes_nonce() {
     };
     assert_eq!(engine.verify_solution(&retry, ip()).status(), StatusCode::FORBIDDEN);
 }
+
+// ── Widget (form-embed / siteverify) tests ───────────────────────────
+
+#[test]
+fn widget_token_roundtrip_and_single_use() {
+    let engine = test_engine();
+    let token = engine.mint_widget_token("vw_site_abc");
+    // First siteverify succeeds and consumes the token.
+    assert!(engine.verify_widget_token(&token, "vw_site_abc"));
+    // Replay is rejected (single-use).
+    assert!(!engine.verify_widget_token(&token, "vw_site_abc"));
+}
+
+#[test]
+fn widget_token_rejected_for_wrong_sitekey() {
+    let engine = test_engine();
+    let token = engine.mint_widget_token("vw_site_abc");
+    assert!(!engine.verify_widget_token(&token, "vw_site_other"));
+}
+
+#[test]
+fn widget_token_rejected_when_tampered_or_malformed() {
+    let engine = test_engine();
+    let token = engine.mint_widget_token("vw_site_abc");
+    let tampered = format!("{}X", &token[..token.len() - 1]);
+    assert!(!engine.verify_widget_token(&tampered, "vw_site_abc"));
+    assert!(!engine.verify_widget_token("not-a-token", "vw_site_abc"));
+    assert!(!engine.verify_widget_token("", "vw_site_abc"));
+}
+
+#[test]
+fn verify_widget_mints_usable_token() {
+    let engine = test_engine();
+    let nonce = pow::generate_nonce();
+    let nonce_hex = pow::to_hex(&nonce);
+    engine.nonce_store.insert(&nonce_hex, t1(8));
+    let counter = (0..100_000u64)
+        .find(|&c| pow::verify_pow(&nonce, c, 8))
+        .expect("should find solution at difficulty 8");
+
+    let token = engine
+        .verify_widget("vw_site_abc", &nonce_hex, &format!("{counter:016x}"), &None)
+        .expect("widget verify should succeed");
+    assert!(engine.verify_widget_token(&token, "vw_site_abc"));
+}
+
+#[test]
+fn verify_widget_rejects_bad_solution() {
+    let engine = test_engine();
+    let nonce = pow::generate_nonce();
+    let nonce_hex = pow::to_hex(&nonce);
+    engine.nonce_store.insert(&nonce_hex, t1(8));
+    let result = engine.verify_widget("vw_site_abc", &nonce_hex, "ffffffffffffffff", &None);
+    assert!(result.is_err());
+}

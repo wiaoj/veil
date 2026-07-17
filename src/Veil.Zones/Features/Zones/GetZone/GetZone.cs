@@ -22,7 +22,8 @@ public sealed record GetZoneResponse(
     List<RuleResponse> Rules,
     bool CacheEnabled,
     ManagedRulesInfo ManagedRules,
-    bool Shadow);
+    bool Shadow,
+    WidgetConfigResponse Widget);
 
 public sealed record ManagedRulesInfo(
     bool SqlInjection,
@@ -80,7 +81,8 @@ public sealed class GetZoneEndpoint : IEndpoint {
                 zone.ManagedRules.InspectBody,
                 zone.ManagedRules.Action == Veil.Zones.Domain.Enums.ManagedRuleAction.Challenge ? "challenge" : "block",
                 zone.ManagedRules.BlockOversizedBody),
-            zone.Shadow);
+            zone.Shadow,
+            zone.Widget.ToResponse());
 
         return Results.Ok(response);
     }

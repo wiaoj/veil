@@ -186,6 +186,17 @@ pub fn html(status: StatusCode, body: String) -> Response<ProxyBody> {
         .expect("static response")
 }
 
+/// Serves a static JavaScript asset (the embeddable widget script). Cacheable
+/// — the script is the same for every visitor of a zone.
+pub fn javascript(body: &'static str) -> Response<ProxyBody> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, "application/javascript; charset=utf-8")
+        .header(CACHE_CONTROL, "public, max-age=300")
+        .body(full(body))
+        .expect("static response")
+}
+
 pub fn json_response(status: StatusCode, body: &str) -> Response<ProxyBody> {
     Response::builder()
         .status(status)

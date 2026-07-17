@@ -249,6 +249,21 @@ export interface ZoneDetail {
     action: string
     blockOversizedBody: boolean
   }
+  widget: WidgetConfig
+}
+
+/** Embeddable bot-verification widget config (secret never returned). */
+export interface WidgetConfig {
+  enabled: boolean
+  siteKey: string
+  theme: string
+  hasSecret: boolean
+}
+
+/** Returned once when widget keys are (re)generated — the secret is shown here only. */
+export interface WidgetRotateResult {
+  siteKey: string
+  secret: string
 }
 
 export interface VolumePoint {

@@ -89,6 +89,25 @@ pub struct Zone {
     /// Opt-in response caching for this zone. Absent → no caching (default).
     #[serde(default)]
     pub cache: Option<CacheSettings>,
+    /// Embeddable bot-verification widget credentials. Absent → the `/_veil`
+    /// widget endpoints return 404 for this zone.
+    #[serde(default)]
+    pub widget: Option<WidgetSettings>,
+}
+
+/// Per-zone embeddable widget ("verify I'm human") credentials, pushed from the
+/// control plane. `site_key` is public (embedded in the page); `secret` gates
+/// the `/_veil/siteverify` endpoint the origin backend calls. Fully self-hosted
+/// — no third-party service is contacted.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WidgetSettings {
+    pub site_key: String,
+    pub secret: String,
+    #[serde(default)]
+    pub enabled: bool,
+    /// Optional visual theme hint for the widget (`light` / `dark` / `auto`).
+    #[serde(default)]
+    pub theme: Option<String>,
 }
 
 /// Per-zone response-cache tuning. Its presence enables caching; the cache
@@ -244,6 +263,13 @@ pub struct ChallengeSettings {
     /// (`VEIL_CHALLENGE_TTL`).
     #[serde(default)]
     pub token_ttl_secs: Option<u32>,
+    /// When set, a Tier 2 challenge is served as a *visible* interaction widget
+    /// (a self-hosted "verify I'm human" checkbox) instead of the invisible
+    /// passive check. The verification is unchanged (elevated PoW + behavioural
+    /// telemetry); only the client-side UX gains an explicit human click. No
+    /// third-party service is involved.
+    #[serde(default)]
+    pub require_interaction: bool,
 }
 
 /// Managed signature rule set toggles (Phase 8.x). Each category enables a
@@ -610,6 +636,18 @@ mod tests {
         assert_eq!(ch.tier2_risk_threshold, 80);
         assert_eq!(ch.base_difficulty, Some(24));
         assert_eq!(ch.token_ttl_secs, Some(300));
+        // Absent → passive (invisible) Tier 2.
+        assert!(!ch.require_interaction);
+    }
+
+    #[test]
+    fn challenge_require_interaction_parses() {
+        let config = Config::from_json(
+            r#"{"zones": [{"name": "z", "hosts": ["*"], "upstream": "http://h:1", "rules": [],
+                "challenge": {"tier2_risk_threshold": 70, "require_interaction": true}}]}"#,
+        )
+        .unwrap();
+        assert!(config.zones[0].challenge.unwrap().require_interaction);
     }
 
     #[test]

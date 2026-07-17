@@ -66,6 +66,12 @@ pub struct ChallengeStrings {
     pub noscript: &'static str,
     pub status_verifying: &'static str,
     pub hint: &'static str,
+    /// Interactive (visible) Tier-2 widget: checkbox label.
+    pub verify_label: &'static str,
+    /// Interactive widget: label while the click is being verified.
+    pub verify_checking: &'static str,
+    /// Interactive widget: label once verification succeeds.
+    pub verify_done: &'static str,
     pub footer: &'static str,
     pub status_redirecting: &'static str,
     pub status_almost: &'static str,
@@ -83,6 +89,9 @@ pub fn challenge_strings(lang: Lang) -> ChallengeStrings {
             noscript: "Devam etmek için JavaScript gereklidir. Lütfen tarayıcı ayarlarınızdan JavaScript'i etkinleştirin.",
             status_verifying: "Doğrulanıyor…",
             hint: "Doğrulamayı tamamlamak için imlecinizi hareket ettirin veya ekrana dokunun.",
+            verify_label: "İnsan olduğumu doğrula",
+            verify_checking: "Doğrulanıyor…",
+            verify_done: "Doğrulandı",
             footer: "Veil Edge tarafından korunmaktadır",
             status_redirecting: "Doğrulandı, yönlendiriliyorsunuz…",
             status_almost: "Neredeyse tamam…",
@@ -97,6 +106,9 @@ pub fn challenge_strings(lang: Lang) -> ChallengeStrings {
             noscript: "JavaScript is required to continue. Please enable JavaScript in your browser settings.",
             status_verifying: "Verifying…",
             hint: "Move your cursor or tap the screen to complete verification.",
+            verify_label: "Verify I am human",
+            verify_checking: "Verifying…",
+            verify_done: "Verified",
             footer: "Protected by Veil Edge",
             status_redirecting: "Verified, redirecting you…",
             status_almost: "Almost there…",

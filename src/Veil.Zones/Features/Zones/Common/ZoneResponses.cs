@@ -22,6 +22,15 @@ public sealed record ChallengeConfigResponse(
     bool RequireCaptcha,
     int RiskThreshold);
 
+/// <summary>Embeddable widget config as returned by the management API. The
+/// secret is never returned (write-only); <see cref="HasSecret"/> only reports
+/// whether keys have been provisioned.</summary>
+public sealed record WidgetConfigResponse(
+    bool Enabled,
+    string SiteKey,
+    string Theme,
+    bool HasSecret);
+
 /// <summary>
 /// Flat wire representation of a rule condition; same shape as the request
 /// counterpart (see <see cref="RuleConditionRequest"/> for field semantics).

@@ -62,6 +62,17 @@ public sealed class ZoneConfiguration : IEntityTypeConfiguration<Zone> {
             .HasDefaultValueSql(
                 "'{\"SqlInjection\":false,\"Xss\":false,\"PathTraversal\":false,\"InspectBody\":false,\"Action\":0}'::jsonb");
 
+        builder.Property(x => x.Widget)
+            .HasColumnName("widget")
+            .HasColumnType("jsonb")
+            .IsRequired()
+            .HasConversion(
+                v => JsonSerializer.Serialize(WidgetConfigData.FromDomain(v), JsonSerializerOptions.Default),
+                v => JsonSerializer.Deserialize<WidgetConfigData>(v, JsonSerializerOptions.Default)!.ToDomain())
+            // Existing rows get the "disabled, no keys" default.
+            .HasDefaultValueSql(
+                "'{\"Enabled\":false,\"SiteKey\":\"\",\"Secret\":\"\",\"Theme\":\"auto\"}'::jsonb");
+
         builder.Property(x => x.CacheEnabled)
             .HasColumnName("cache_enabled")
             .HasDefaultValue(false);

@@ -93,3 +93,18 @@ internal sealed record ChallengeConfigData(
             this.RiskThreshold ?? 70);
     }
 }
+
+internal sealed record WidgetConfigData(
+    bool Enabled,
+    string SiteKey,
+    string Secret,
+    string Theme = "auto") {
+
+    public static WidgetConfigData FromDomain(WidgetConfig config) {
+        return new WidgetConfigData(config.Enabled, config.SiteKey, config.Secret, config.Theme);
+    }
+
+    public WidgetConfig ToDomain() {
+        return WidgetConfig.Restore(this.Enabled, this.SiteKey, this.Secret, this.Theme);
+    }
+}
