@@ -41,7 +41,8 @@ public sealed record ChallengeConfigRequest(
     int Difficulty = 20,
     int ExpirationSeconds = 600,
     bool RequireCaptcha = false,
-    int RiskThreshold = 70);
+    int RiskThreshold = 70,
+    string? CookieDomain = null);
 
 /// <summary>
 /// Enable/disable the embeddable bot-verification widget and set its theme.

@@ -72,7 +72,8 @@ internal sealed record ChallengeConfigData(
     int PowDifficulty,
     double TokenTtlSeconds,
     bool RequireCaptchaOnHighRisk,
-    int? RiskThreshold = null) {
+    int? RiskThreshold = null,
+    string? CookieDomain = null) {
 
     public static ChallengeConfigData FromDomain(ChallengeConfig config) {
         return new ChallengeConfigData(
@@ -80,7 +81,8 @@ internal sealed record ChallengeConfigData(
             config.PowDifficulty.Value,
             config.TokenTtl.Value.TotalSeconds,
             config.RequireCaptchaOnHighRisk,
-            config.RiskThreshold);
+            config.RiskThreshold,
+            config.CookieDomain);
     }
 
     public ChallengeConfig ToDomain() {
@@ -90,7 +92,9 @@ internal sealed record ChallengeConfigData(
             TimeSpan.FromSeconds(this.TokenTtlSeconds),
             this.RequireCaptchaOnHighRisk,
             // Rows written before RiskThreshold existed default to 70.
-            this.RiskThreshold ?? 70);
+            this.RiskThreshold ?? 70,
+            // Rows written before CookieDomain existed default to host-only.
+            this.CookieDomain);
     }
 }
 

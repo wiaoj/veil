@@ -237,6 +237,7 @@ export interface ZoneDetail {
     expirationSeconds: number
     requireCaptcha: boolean
     riskThreshold: number
+    cookieDomain: string
   }
   rules: Array<Rule>
   cacheEnabled: boolean

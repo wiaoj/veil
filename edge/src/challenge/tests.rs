@@ -132,7 +132,7 @@ fn verify_solution_accepts_valid_pow() {
         behavior: None,
     };
 
-    let response = engine.verify_solution(&solution, ip());
+    let response = engine.verify_solution(&solution, ip(), &CookieOptions::default());
     assert_eq!(response.status(), StatusCode::OK);
 }
 
@@ -149,7 +149,7 @@ fn verify_solution_rejects_wrong_counter() {
         behavior: None,
     };
 
-    let response = engine.verify_solution(&solution, ip());
+    let response = engine.verify_solution(&solution, ip(), &CookieOptions::default());
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
@@ -162,7 +162,7 @@ fn verify_solution_rejects_unknown_nonce() {
         behavior: None,
     };
 
-    let response = engine.verify_solution(&solution, ip());
+    let response = engine.verify_solution(&solution, ip(), &CookieOptions::default());
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
@@ -184,7 +184,7 @@ fn verify_solution_prevents_nonce_replay() {
     };
 
     // First verification succeeds
-    let r1 = engine.verify_solution(&solution, ip());
+    let r1 = engine.verify_solution(&solution, ip(), &CookieOptions::default());
     assert_eq!(r1.status(), StatusCode::OK);
 
     // Replay with same nonce is rejected (nonce was consumed)
@@ -193,8 +193,42 @@ fn verify_solution_prevents_nonce_replay() {
         counter: format!("{counter:016x}"),
         behavior: None,
     };
-    let r2 = engine.verify_solution(&solution2, ip());
+    let r2 = engine.verify_solution(&solution2, ip(), &CookieOptions::default());
     assert_eq!(r2.status(), StatusCode::FORBIDDEN);
+}
+
+// ── Pass-cookie attribute tests ──────────────────────────────────────
+
+fn solved_tier1(engine: &ChallengeEngine) -> VerifySolutionRequest {
+    let nonce = pow::generate_nonce();
+    let nonce_hex = pow::to_hex(&nonce);
+    engine.nonce_store.insert(&nonce_hex, t1(8));
+    let counter = (0..100_000u64)
+        .find(|&c| pow::verify_pow(&nonce, c, 8))
+        .expect("should find solution");
+    VerifySolutionRequest { nonce: nonce_hex, counter: format!("{counter:016x}"), behavior: None }
+}
+
+#[test]
+fn cookie_carries_secure_and_domain_when_set() {
+    let engine = test_engine();
+    let solution = solved_tier1(&engine);
+    let opts = CookieOptions { secure: true, domain: Some(".example.com".to_owned()) };
+    let response = engine.verify_solution(&solution, ip(), &opts);
+    let set_cookie = response.headers().get("Set-Cookie").unwrap().to_str().unwrap();
+    assert!(set_cookie.contains("; Secure"), "cookie: {set_cookie}");
+    assert!(set_cookie.contains("; Domain=.example.com"), "cookie: {set_cookie}");
+    assert!(set_cookie.contains("HttpOnly"));
+}
+
+#[test]
+fn cookie_host_only_and_insecure_by_default() {
+    let engine = test_engine();
+    let solution = solved_tier1(&engine);
+    let response = engine.verify_solution(&solution, ip(), &CookieOptions::default());
+    let set_cookie = response.headers().get("Set-Cookie").unwrap().to_str().unwrap();
+    assert!(!set_cookie.contains("Secure"), "cookie: {set_cookie}");
+    assert!(!set_cookie.contains("Domain="), "cookie: {set_cookie}");
 }
 
 // ── Challenge page tests ─────────────────────────────────────────────
@@ -230,7 +264,7 @@ fn tier2_rejects_missing_behavior() {
         counter: format!("{counter:016x}"),
         behavior: None,
     };
-    assert_eq!(engine.verify_solution(&solution, ip()).status(), StatusCode::FORBIDDEN);
+    assert_eq!(engine.verify_solution(&solution, ip(), &CookieOptions::default()).status(), StatusCode::FORBIDDEN);
 }
 
 #[test]
@@ -242,7 +276,7 @@ fn tier2_rejects_non_human_behavior() {
         counter: format!("{counter:016x}"),
         behavior: Some(BehaviorTelemetry::default()), // zero events
     };
-    assert_eq!(engine.verify_solution(&solution, ip()).status(), StatusCode::FORBIDDEN);
+    assert_eq!(engine.verify_solution(&solution, ip(), &CookieOptions::default()).status(), StatusCode::FORBIDDEN);
 }
 
 #[test]
@@ -254,7 +288,7 @@ fn tier2_accepts_human_behavior() {
         counter: format!("{counter:016x}"),
         behavior: Some(human_behavior()),
     };
-    assert_eq!(engine.verify_solution(&solution, ip()).status(), StatusCode::OK);
+    assert_eq!(engine.verify_solution(&solution, ip(), &CookieOptions::default()).status(), StatusCode::OK);
 }
 
 #[test]
@@ -268,7 +302,7 @@ fn tier2_failed_behavior_consumes_nonce() {
         counter: format!("{counter:016x}"),
         behavior: Some(BehaviorTelemetry::default()),
     };
-    assert_eq!(engine.verify_solution(&bad, ip()).status(), StatusCode::FORBIDDEN);
+    assert_eq!(engine.verify_solution(&bad, ip(), &CookieOptions::default()).status(), StatusCode::FORBIDDEN);
 
     // Retry with valid behaviour on the same nonce is now an unknown nonce.
     let retry = VerifySolutionRequest {
@@ -276,7 +310,7 @@ fn tier2_failed_behavior_consumes_nonce() {
         counter: format!("{counter:016x}"),
         behavior: Some(human_behavior()),
     };
-    assert_eq!(engine.verify_solution(&retry, ip()).status(), StatusCode::FORBIDDEN);
+    assert_eq!(engine.verify_solution(&retry, ip(), &CookieOptions::default()).status(), StatusCode::FORBIDDEN);
 }
 
 // ── Widget (form-embed / siteverify) tests ───────────────────────────

@@ -420,6 +420,7 @@ function EditChallengeDialog({
   const [expiration, setExpiration] = useState(zone.challenge.expirationSeconds)
   const [requireCaptcha, setRequireCaptcha] = useState(zone.challenge.requireCaptcha)
   const [riskThreshold, setRiskThreshold] = useState(zone.challenge.riskThreshold)
+  const [cookieDomain, setCookieDomain] = useState(zone.challenge.cookieDomain)
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -429,6 +430,7 @@ function EditChallengeDialog({
       expirationSeconds: expiration,
       requireCaptcha,
       riskThreshold,
+      cookieDomain: cookieDomain.trim(),
     })
     setOpen(false)
   }
@@ -506,6 +508,21 @@ function EditChallengeDialog({
             <p className="text-muted-foreground text-xs">
               Tier-2'de görünür bir "insan olduğumu doğrula" kutucuğu gösterilir. Tamamen
               self-hosted (PoW + davranış) — üçüncü tarafa (CAPTCHA servisi) bağımlılık yoktur.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ch-cookie-domain">Pass cookie domain (opsiyonel)</Label>
+            <Input
+              id="ch-cookie-domain"
+              className="font-mono"
+              placeholder=".example.com"
+              value={cookieDomain}
+              onChange={(e) => setCookieDomain(e.target.value)}
+              disabled={!enabled}
+            />
+            <p className="text-muted-foreground text-xs">
+              Boş → cookie yalnızca bu host'a. <code className="font-mono">.example.com</code> gibi
+              üst domain girersen tek doğrulama tüm subdomain'lerde geçerli olur.
             </p>
           </div>
           <DialogFooter>

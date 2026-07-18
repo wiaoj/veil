@@ -91,6 +91,16 @@ pub struct IssuedNonce {
 /// injected into a form and meant to be verified promptly by the origin backend.
 pub const WIDGET_TOKEN_TTL: u32 = 300;
 
+/// Attributes applied to the pass cookie beyond the always-on `HttpOnly` /
+/// `SameSite=Lax`. `secure` is set for requests received over TLS (so the cookie
+/// is HTTPS-only); `domain` is an opt-in per-zone value that widens the cookie to
+/// subdomains (e.g. `.example.com`) — absent means host-only.
+#[derive(Debug, Clone, Default)]
+pub struct CookieOptions {
+    pub secure: bool,
+    pub domain: Option<String>,
+}
+
 /// A challenge-solution verification failure. Maps to the HTTP responses the
 /// full-page verify endpoint returns, and to a Turnstile-style `error-codes`
 /// entry for the widget.
@@ -344,18 +354,27 @@ impl ChallengeEngine {
         &self,
         solution: &VerifySolutionRequest,
         client_ip: IpAddr,
+        cookie_opts: &CookieOptions,
     ) -> Response<ProxyBody> {
         let info = match self.check_and_consume(&solution.nonce, &solution.counter, &solution.behavior) {
             Ok(info) => info,
             Err(err) => return err.response(),
         };
 
-        // Issue signed token cookie (lifetime bound on the nonce).
+        // Issue signed token cookie (lifetime bound on the nonce). HttpOnly and
+        // SameSite=Lax are always set; Domain / Secure are applied per request.
         let token = self.create_token(client_ip, info.tier, info.token_ttl);
-        let cookie = format!(
+        let mut cookie = format!(
             "{}={}; Path=/; Max-Age={}; SameSite=Lax; HttpOnly",
             self.cookie_name, token, info.token_ttl
         );
+        if let Some(domain) = &cookie_opts.domain {
+            cookie.push_str("; Domain=");
+            cookie.push_str(domain);
+        }
+        if cookie_opts.secure {
+            cookie.push_str("; Secure");
+        }
 
         Response::builder()
             .status(StatusCode::OK)

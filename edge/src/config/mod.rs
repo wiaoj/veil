@@ -250,7 +250,7 @@ impl Zone {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ChallengeSettings {
     /// Risk score (`0..=100`) at or above which the Tier 2 interaction
     /// challenge is served instead of the Tier 1 PoW page.
@@ -270,6 +270,10 @@ pub struct ChallengeSettings {
     /// third-party service is involved.
     #[serde(default)]
     pub require_interaction: bool,
+    /// Opt-in parent domain for the pass cookie (e.g. `.example.com`), so a
+    /// single pass covers the zone's subdomains. Absent → host-only cookie.
+    #[serde(default)]
+    pub cookie_domain: Option<String>,
 }
 
 /// Managed signature rule set toggles (Phase 8.x). Each category enables a
@@ -629,14 +633,16 @@ mod tests {
 
         let config = Config::from_json(
             r#"{"zones": [{"name": "z", "hosts": ["*"], "upstream": "http://h:1", "rules": [],
-                "challenge": {"tier2_risk_threshold": 80, "base_difficulty": 24, "token_ttl_secs": 300}}]}"#,
+                "challenge": {"tier2_risk_threshold": 80, "base_difficulty": 24, "token_ttl_secs": 300,
+                "cookie_domain": ".example.com"}}]}"#,
         )
         .unwrap();
-        let ch = config.zones[0].challenge.unwrap();
+        let ch = config.zones[0].challenge.as_ref().unwrap();
         assert_eq!(ch.tier2_risk_threshold, 80);
         assert_eq!(ch.base_difficulty, Some(24));
         assert_eq!(ch.token_ttl_secs, Some(300));
-        // Absent → passive (invisible) Tier 2.
+        assert_eq!(ch.cookie_domain.as_deref(), Some(".example.com"));
+        // Absent → passive (invisible) Tier 2, host-only cookie.
         assert!(!ch.require_interaction);
     }
 
@@ -647,7 +653,7 @@ mod tests {
                 "challenge": {"tier2_risk_threshold": 70, "require_interaction": true}}]}"#,
         )
         .unwrap();
-        assert!(config.zones[0].challenge.unwrap().require_interaction);
+        assert!(config.zones[0].challenge.as_ref().unwrap().require_interaction);
     }
 
     #[test]

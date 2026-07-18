@@ -254,8 +254,9 @@ pub async fn serve_with_shutdown(
                 let state = Arc::clone(&state);
                 let service = service_fn(move |req| {
                     let state = Arc::clone(&state);
-                    // Plaintext HTTP carries no TLS ClientHello → no fingerprints.
-                    async move { Ok::<_, Infallible>(handle(req, peer, state, Fingerprints::default()).await) }
+                    // Plaintext HTTP carries no TLS ClientHello → no fingerprints,
+                    // and cookies must not be marked Secure (they wouldn't be sent back).
+                    async move { Ok::<_, Infallible>(handle(req, peer, state, Fingerprints::default(), false).await) }
                 });
                 let conn = builder.serve_connection_with_upgrades(TokioIo::new(stream), service);
                 let conn = graceful.watch(conn.into_owned());
@@ -307,7 +308,7 @@ pub async fn serve_tls(
                 let service = service_fn(move |req| {
                     let state = Arc::clone(&state);
                     let fp = fp.clone();
-                    async move { Ok::<_, Infallible>(handle(req, peer, state, fp).await) }
+                    async move { Ok::<_, Infallible>(handle(req, peer, state, fp, true).await) }
                 });
                 let conn = builder.serve_connection_with_upgrades(TokioIo::new(tls_stream), service);
                 let conn = graceful.watch(conn.into_owned());
@@ -341,6 +342,7 @@ pub async fn handle(
     peer: SocketAddr,
     state: Arc<AppState>,
     fp: Fingerprints,
+    secure: bool,
 ) -> Response<ProxyBody> {
     let started = Instant::now();
     let ts_ms = analytics::now_ms();
@@ -373,7 +375,7 @@ pub async fn handle(
 
     // ── Reserved path: PoW challenge verification ─────────────────────
     if ctx.path == CHALLENGE_VERIFY_PATH && req.method() == Method::POST {
-        return handle_challenge_verify(req, &ctx, &state).await;
+        return handle_challenge_verify(req, &ctx, &state, secure).await;
     }
 
     // ── Reserved paths: embeddable bot-verification widget ────────────
@@ -641,6 +643,7 @@ async fn handle_challenge_verify(
     req: Request<Incoming>,
     ctx: &crate::pipeline::RequestContext,
     state: &AppState,
+    secure: bool,
 ) -> Response<ProxyBody> {
     // Read body (limit to 1KB to prevent abuse)
     let body_bytes = match req.collect().await {
@@ -676,7 +679,16 @@ async fn handle_challenge_verify(
         "challenge verify attempt"
     );
 
-    let response = state.challenge.verify_solution(&solution, ctx.client_ip);
+    // The pass cookie is Secure over TLS and, when the zone opts in, scoped to a
+    // parent domain so one pass covers its subdomains.
+    let config = state.config.load();
+    let cookie_domain = config
+        .resolve_zone(&ctx.host)
+        .and_then(|z| z.challenge.as_ref())
+        .and_then(|c| c.cookie_domain.clone());
+    let cookie_opts = crate::challenge::CookieOptions { secure, domain: cookie_domain };
+
+    let response = state.challenge.verify_solution(&solution, ctx.client_ip, &cookie_opts);
     record_interaction(
         state,
         ctx,

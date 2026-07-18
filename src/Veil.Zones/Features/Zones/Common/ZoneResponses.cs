@@ -20,7 +20,8 @@ public sealed record ChallengeConfigResponse(
     int Difficulty,
     int ExpirationSeconds,
     bool RequireCaptcha,
-    int RiskThreshold);
+    int RiskThreshold,
+    string CookieDomain);
 
 /// <summary>Embeddable widget config as returned by the management API. The
 /// secret is never returned (write-only); <see cref="HasSecret"/> only reports

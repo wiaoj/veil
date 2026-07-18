@@ -61,7 +61,8 @@ public static class ZoneResponseMapping {
             challenge.PowDifficulty.Value,
             (int)challenge.TokenTtl.Value.TotalSeconds,
             challenge.RequireCaptchaOnHighRisk,
-            challenge.RiskThreshold);
+            challenge.RiskThreshold,
+            challenge.CookieDomain);
     }
 
     public static WidgetConfigResponse ToResponse(this WidgetConfig widget) {

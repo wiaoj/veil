@@ -45,7 +45,9 @@ public sealed record EdgeChallengeConfig(
     [property: JsonPropertyName("tier2_risk_threshold")] int Tier2RiskThreshold,
     [property: JsonPropertyName("base_difficulty")] int BaseDifficulty,
     [property: JsonPropertyName("token_ttl_secs")] int TokenTtlSecs,
-    [property: JsonPropertyName("require_interaction")] bool RequireInteraction);
+    [property: JsonPropertyName("require_interaction")] bool RequireInteraction,
+    [property: JsonPropertyName("cookie_domain"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? CookieDomain = null);
 
 /// <summary>Embeddable bot-verification widget credentials pushed to the edge.
 /// The secret is carried in the snapshot (like TLS keys) so the edge can gate
@@ -168,7 +170,9 @@ public static class EdgeConfigSnapshotBuilder {
                     zone.Challenge.RiskThreshold,
                     zone.Challenge.PowDifficulty.Value,
                     (int)zone.Challenge.TokenTtl.Value.TotalSeconds,
-                    zone.Challenge.RequireCaptchaOnHighRisk)
+                    zone.Challenge.RequireCaptchaOnHighRisk,
+                    // Empty → omitted (host-only cookie on the edge).
+                    string.IsNullOrEmpty(zone.Challenge.CookieDomain) ? null : zone.Challenge.CookieDomain)
                 : null;
 
             // Push the widget only when it is enabled and provisioned with keys;
