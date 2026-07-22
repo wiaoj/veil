@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ZonesRouteImport } from './routes/zones'
+import { Route as SchemasRouteImport } from './routes/schemas'
 import { Route as NodesRouteImport } from './routes/nodes'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LiveRouteImport } from './routes/live'
@@ -24,6 +25,11 @@ import { Route as NodesNodeIdRouteImport } from './routes/nodes_.$nodeId'
 const ZonesRoute = ZonesRouteImport.update({
   id: '/zones',
   path: '/zones',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SchemasRoute = SchemasRouteImport.update({
+  id: '/schemas',
+  path: '/schemas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NodesRoute = NodesRouteImport.update({
@@ -85,6 +91,7 @@ export interface FileRoutesByFullPath {
   '/live': typeof LiveRoute
   '/login': typeof LoginRoute
   '/nodes': typeof NodesRoute
+  '/schemas': typeof SchemasRoute
   '/zones': typeof ZonesRoute
   '/nodes/$nodeId': typeof NodesNodeIdRoute
   '/zones/$zoneId': typeof ZonesZoneIdRoute
@@ -98,6 +105,7 @@ export interface FileRoutesByTo {
   '/live': typeof LiveRoute
   '/login': typeof LoginRoute
   '/nodes': typeof NodesRoute
+  '/schemas': typeof SchemasRoute
   '/zones': typeof ZonesRoute
   '/nodes/$nodeId': typeof NodesNodeIdRoute
   '/zones/$zoneId': typeof ZonesZoneIdRoute
@@ -112,6 +120,7 @@ export interface FileRoutesById {
   '/live': typeof LiveRoute
   '/login': typeof LoginRoute
   '/nodes': typeof NodesRoute
+  '/schemas': typeof SchemasRoute
   '/zones': typeof ZonesRoute
   '/nodes_/$nodeId': typeof NodesNodeIdRoute
   '/zones_/$zoneId': typeof ZonesZoneIdRoute
@@ -127,6 +136,7 @@ export interface FileRouteTypes {
     | '/live'
     | '/login'
     | '/nodes'
+    | '/schemas'
     | '/zones'
     | '/nodes/$nodeId'
     | '/zones/$zoneId'
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
     | '/live'
     | '/login'
     | '/nodes'
+    | '/schemas'
     | '/zones'
     | '/nodes/$nodeId'
     | '/zones/$zoneId'
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
     | '/live'
     | '/login'
     | '/nodes'
+    | '/schemas'
     | '/zones'
     | '/nodes_/$nodeId'
     | '/zones_/$zoneId'
@@ -167,6 +179,7 @@ export interface RootRouteChildren {
   LiveRoute: typeof LiveRoute
   LoginRoute: typeof LoginRoute
   NodesRoute: typeof NodesRoute
+  SchemasRoute: typeof SchemasRoute
   ZonesRoute: typeof ZonesRoute
   NodesNodeIdRoute: typeof NodesNodeIdRoute
   ZonesZoneIdRoute: typeof ZonesZoneIdRoute
@@ -180,6 +193,13 @@ declare module '@tanstack/react-router' {
       path: '/zones'
       fullPath: '/zones'
       preLoaderRoute: typeof ZonesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schemas': {
+      id: '/schemas'
+      path: '/schemas'
+      fullPath: '/schemas'
+      preLoaderRoute: typeof SchemasRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/nodes': {
@@ -263,6 +283,7 @@ const rootRouteChildren: RootRouteChildren = {
   LiveRoute: LiveRoute,
   LoginRoute: LoginRoute,
   NodesRoute: NodesRoute,
+  SchemasRoute: SchemasRoute,
   ZonesRoute: ZonesRoute,
   NodesNodeIdRoute: NodesNodeIdRoute,
   ZonesZoneIdRoute: ZonesZoneIdRoute,

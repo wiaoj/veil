@@ -10,10 +10,11 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import type { Rule, WidgetRotateResult, ZoneDetail } from '#/lib/api'
-import { apiSend } from '#/lib/api'
+import type { Rule, WidgetRotateResult, ZoneDetail, SchemaSubject, SchemaVersion } from '#/lib/api'
+import { apiSend, apiGet, subjectName, versionId } from '#/lib/api'
 import { useApiData } from '#/lib/useApiData'
 import { PageState } from '@/components/PageState'
+import { SchemaConditionInput } from '@/components/SchemaConditionInput'
 import { StatusBadge } from '@/components/StatusBadge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -843,6 +844,8 @@ function newCondition(): ConditionDraft {
   return { type: 'path_match', value: '', headerName: '', path: '', subject: '', version: '' }
 }
 
+
+
 function AddRuleForm({
   busy,
   nextPriority,
@@ -966,22 +969,11 @@ function AddRuleForm({
                   />
                 )}
                 {condition.type === 'body_schema' ? (
-                  <>
-                    <Input
-                      required
-                      placeholder="Şema subject"
-                      value={condition.subject}
-                      onChange={(e) => patch(index, { subject: e.target.value })}
-                      className="w-40 font-mono"
-                    />
-                    <Input
-                      required
-                      placeholder="Versiyon (ör. 1.0.0)"
-                      value={condition.version}
-                      onChange={(e) => patch(index, { version: e.target.value })}
-                      className="w-32 font-mono"
-                    />
-                  </>
+                  <SchemaConditionInput
+                    subject={condition.subject}
+                    version={condition.version}
+                    onChange={(update) => patch(index, update)}
+                  />
                 ) : (
                   <Input
                     required
